@@ -1,0 +1,556 @@
+name: Publish current Marketplace source batch
+
+on:
+  workflow_call:
+    inputs:
+      delivery_key:
+        required: true
+        type: string
+      trigger_label:
+        required: true
+        type: string
+    outputs:
+      pull_number:
+        description: Generated Factory PR number; empty when the current batch is unchanged
+        value: ${{ jobs.build-sign-and-open-pr.outputs.pull_number }}
+
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: xsec-marketplace-publish-main
+  cancel-in-progress: false
+
+jobs:
+  resolve-native-sidecar-source:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      binary_source_sha: ${{ steps.binary-source.outputs.source_sha }}
+    steps:
+      - name: Require the dedicated read-only Desktop source App
+        env:
+          APP_ID: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
+          APP_KEY: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$APP_ID" =~ ^[1-9][0-9]*$ ]] || { echo "XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID is not configured." >&2; exit 1; }
+          [ -n "$APP_KEY" ] || { echo "XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY is not configured." >&2; exit 1; }
+      - name: Create a scoped Desktop source token
+        id: desktop-source-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY }}
+          owner: xsec-labs
+          repositories: xSecDesktop
+          permission-contents: read
+      - name: Resolve the current Desktop main revision
+        id: source
+        env:
+          GH_TOKEN: ${{ steps.desktop-source-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          source_sha="$(gh api repos/xsec-labs/xSecDesktop/commits/main --jq .sha)"
+          [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Desktop main did not resolve to a canonical commit SHA." >&2; exit 1; }
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+      - name: Require the read-only Marketplace Source App
+        env:
+          APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          APP_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$APP_ID" =~ ^[1-9][0-9]*$ ]] || { echo "XSEC_MARKETPLACE_SOURCE_APP_ID is not configured." >&2; exit 1; }
+          [ -n "$APP_KEY" ] || { echo "XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY is not configured." >&2; exit 1; }
+      - name: Create a scoped binary plugin source token
+        id: binary-source-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+          owner: xsec-labs
+          repositories: xsec-plugin-binary-analysis
+          permission-contents: read
+      - name: Resolve the current binary-analysis Beta revision
+        id: binary-source
+        env:
+          GH_TOKEN: ${{ steps.binary-source-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          source_sha="$(gh api repos/xsec-labs/xsec-plugin-binary-analysis/git/ref/heads/beta --jq .object.sha)"
+          [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Binary-analysis Beta did not resolve to a canonical commit SHA." >&2; exit 1; }
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+  build-native-sidecars:
+    needs: resolve-native-sidecar-source
+    runs-on: ${{ matrix.runner }}
+    environment: production
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            shell: bash
+            rust_target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            shell: bash
+            rust_target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            shell: bash
+            rust_target: x86_64-unknown-linux-gnu
+          - runner: windows-2022
+            shell: pwsh
+            rust_target: x86_64-pc-windows-msvc
+    steps:
+      - name: Create a scoped Desktop source token
+        id: desktop-source-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY }}
+          owner: xsec-labs
+          repositories: xSecDesktop
+          permission-contents: read
+      - name: Check out the exact Desktop source revision
+        uses: actions/checkout@v4
+        with:
+          repository: xsec-labs/xSecDesktop
+          github-server-url: https://github.com
+          ref: ${{ needs.resolve-native-sidecar-source.outputs.source_sha }}
+          token: ${{ steps.desktop-source-token.outputs.token }}
+          path: .xsec-desktop-source
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify the exact Desktop source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git -C .xsec-desktop-source rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA" ] || {
+            echo "Checked-out Desktop source does not match the resolved revision." >&2
+            exit 1
+          }
+      - name: Require the read-only binary plugin Source App
+        env:
+          XSEC_MARKETPLACE_SOURCE_APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          [ -n "$XSEC_MARKETPLACE_SOURCE_APP_ID" ] && [ -n "$XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY" ] || {
+            echo "Binary-analysis builds require the read-only Marketplace Source App." >&2
+            exit 1
+          }
+      - name: Create a scoped binary plugin source token
+        id: binary-source-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+          owner: xsec-labs
+          repositories: xsec-plugin-binary-analysis
+          permission-contents: read
+      - name: Check out the exact binary-analysis Beta revision
+        uses: actions/checkout@v4
+        with:
+          repository: xsec-labs/xsec-plugin-binary-analysis
+          github-server-url: https://github.com
+          ref: ${{ needs.resolve-native-sidecar-source.outputs.binary_source_sha }}
+          token: ${{ steps.binary-source-token.outputs.token }}
+          path: .xsec-binary-analysis-source
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify the exact binary-analysis source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.binary_source_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git -C .xsec-binary-analysis-source rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA" ]
+          [ -f .xsec-binary-analysis-source/scripts/build_engine_bundle.py ] || {
+            echo "Binary-analysis source revision does not contain its pinned engine builder." >&2
+            exit 1
+          }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+          cache-dependency-path: .xsec-desktop-source/pnpm-lock.yaml
+      - name: Install macOS engine build tools
+        if: ${{ matrix.shell == 'bash' && startsWith(matrix.runner, 'macos-') }}
+        run: brew install meson ninja pkg-config
+      - name: Install Linux engine build tools
+        if: ${{ matrix.shell == 'bash' && matrix.runner == 'ubuntu-24.04' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential meson ninja-build pkg-config patchelf
+      - uses: msys2/setup-msys2@v2
+        if: ${{ matrix.shell == 'pwsh' }}
+        with:
+          msystem: UCRT64
+          update: false
+          install: base-devel git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-python
+      - name: Build the reviewed native MCP sidecars
+        if: ${{ matrix.shell == 'bash' }}
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          CARGO_TARGET_DIR: ${{ runner.temp }}/xsec-native-sidecars-cargo
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --package xsec-attack-path-mcp --package xsec-asset-discovery-mcp --package xsec-browser-mcp --target "$RUST_TARGET" --manifest-path .xsec-desktop-source/Cargo.toml
+          output_dir="$RUNNER_TEMP/xsec-native-sidecars"
+          mkdir -p "$output_dir"
+          attack_path_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/xsec-attack-path-mcp"
+          asset_discovery_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/xsec-asset-discovery-mcp"
+          browser_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/browser-mcp"
+          [ -f "$attack_path_binary" ] && [ ! -L "$attack_path_binary" ] && [ -s "$attack_path_binary" ]
+          [ -f "$asset_discovery_binary" ] && [ ! -L "$asset_discovery_binary" ] && [ -s "$asset_discovery_binary" ]
+          [ -f "$browser_binary" ] && [ ! -L "$browser_binary" ] && [ -s "$browser_binary" ]
+          cp "$attack_path_binary" "$output_dir/attack-path-mcp"
+          cp "$asset_discovery_binary" "$output_dir/asset-discovery-mcp"
+          cp "$browser_binary" "$output_dir/browser-mcp"
+          chmod 0755 "$output_dir/attack-path-mcp"
+          chmod 0755 "$output_dir/asset-discovery-mcp"
+          chmod 0755 "$output_dir/browser-mcp"
+          corepack enable
+          pnpm --dir .xsec-desktop-source install --frozen-lockfile
+          case "$RUST_TARGET" in
+            aarch64-apple-darwin) runtime_platform="macos-arm64" ;;
+            x86_64-apple-darwin) runtime_platform="macos-x86_64" ;;
+            x86_64-unknown-linux-gnu) runtime_platform="linux-x86_64" ;;
+            *) echo "Unsupported browser runtime target: $RUST_TARGET" >&2; exit 1 ;;
+          esac
+          runtime_deploy="$RUNNER_TEMP/xsec-browser-runtime-deps-$RUST_TARGET"
+          [ ! -e "$runtime_deploy" ] || { echo "Browser runtime staging path already exists." >&2; exit 1; }
+          pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy "$runtime_deploy"
+          runtime_root="$output_dir/browser-runtime"
+          mkdir -p "$runtime_root/node/$runtime_platform" "$runtime_root/bridge"
+          python scripts/browser_node_runtime.py --platform "$runtime_platform" --output "$runtime_root/node/$runtime_platform/node"
+          printf '%s\n' 'v22.23.2' > "$runtime_root/node-version.txt"
+          python scripts/prepare_browser_runtime.py --source-node-modules "$runtime_deploy/node_modules" --destination-node-modules "$runtime_root/node_modules"
+          cp .xsec-desktop-source/crates/xsec-browser/src/*.mjs "$runtime_root/bridge/"
+          runtime_node="$runtime_root/node/$runtime_platform/node"
+          [ "$("$runtime_node" --version)" = "v22.23.2" ]
+          (cd "$runtime_root" && "$runtime_node" --input-type=module -e 'await import("playwright-core"); await import("cloakbrowser")')
+          cargo build --locked --release --package binary-analysis-mcp --target "$RUST_TARGET" --manifest-path .xsec-binary-analysis-source/Cargo.toml
+          binary_analysis_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/binary-analysis-mcp"
+          [ -f "$binary_analysis_binary" ] && [ ! -L "$binary_analysis_binary" ] && [ -s "$binary_analysis_binary" ]
+          cp "$binary_analysis_binary" "$output_dir/binary-analysis-mcp"
+          chmod 0755 "$output_dir/binary-analysis-mcp"
+          python .xsec-binary-analysis-source/scripts/build_engine_bundle.py --target "$RUST_TARGET" --work-root "$RUNNER_TEMP/xsec-binary-analysis-engine-$RUST_TARGET" --output "$output_dir/binary-engine" --jobs 4
+      - name: Build the reviewed native MCP sidecars
+        if: ${{ matrix.shell == 'pwsh' }}
+        shell: pwsh
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          CARGO_TARGET_DIR: ${{ runner.temp }}/xsec-native-sidecars-cargo
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package xsec-attack-path-mcp --package xsec-asset-discovery-mcp --package xsec-browser-mcp --target $env:RUST_TARGET --manifest-path .xsec-desktop-source/Cargo.toml
+          $outputDirectory = Join-Path $env:RUNNER_TEMP 'xsec-native-sidecars'
+          New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+          $attackPathBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\xsec-attack-path-mcp.exe"
+          $assetDiscoveryBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\xsec-asset-discovery-mcp.exe"
+          $browserBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\browser-mcp.exe"
+          if (-not (Test-Path -LiteralPath $attackPathBinary -PathType Leaf)) { throw 'Attack-path MCP binary is unavailable' }
+          if (-not (Test-Path -LiteralPath $assetDiscoveryBinary -PathType Leaf)) { throw 'Asset-discovery MCP binary is unavailable' }
+          if (-not (Test-Path -LiteralPath $browserBinary -PathType Leaf)) { throw 'Browser MCP binary is unavailable' }
+          Copy-Item -LiteralPath $attackPathBinary -Destination (Join-Path $outputDirectory 'attack-path-mcp')
+          Copy-Item -LiteralPath $assetDiscoveryBinary -Destination (Join-Path $outputDirectory 'asset-discovery-mcp')
+          Copy-Item -LiteralPath $browserBinary -Destination (Join-Path $outputDirectory 'browser-mcp')
+          corepack enable
+          pnpm --dir .xsec-desktop-source install --frozen-lockfile
+          $runtimeDeploy = Join-Path $env:RUNNER_TEMP "xsec-browser-runtime-deps-$env:RUST_TARGET"
+          if (Test-Path -LiteralPath $runtimeDeploy) { throw 'Browser runtime staging path already exists' }
+          pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy $runtimeDeploy
+          $runtimeRoot = Join-Path $outputDirectory 'browser-runtime'
+          New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'node\windows-x86_64') -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'bridge') -Force | Out-Null
+          python scripts/browser_node_runtime.py --platform windows-x86_64 --output (Join-Path $runtimeRoot 'node\windows-x86_64\node.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned browser Node runtime preparation failed' }
+          Set-Content -LiteralPath (Join-Path $runtimeRoot 'node-version.txt') -Value 'v22.23.2' -NoNewline -Encoding ascii
+          python scripts/prepare_browser_runtime.py --source-node-modules (Join-Path $runtimeDeploy 'node_modules') --destination-node-modules (Join-Path $runtimeRoot 'node_modules')
+          if ($LASTEXITCODE -ne 0) { throw 'Locked browser Node dependencies could not be materialized' }
+          Get-ChildItem -LiteralPath .xsec-desktop-source\crates\xsec-browser\src -Filter '*.mjs' -File | Copy-Item -Destination (Join-Path $runtimeRoot 'bridge')
+          $runtimeNode = Join-Path $runtimeRoot 'node\windows-x86_64\node.exe'
+          if ((& $runtimeNode --version) -ne 'v22.23.2') { throw 'Packed browser Node version mismatch' }
+          Push-Location $runtimeRoot
+          try { & $runtimeNode --input-type=module -e 'await import("playwright-core"); await import("cloakbrowser")'; if ($LASTEXITCODE -ne 0) { throw 'Packed browser Node dependencies are not loadable' } }
+          finally { Pop-Location }
+          cargo build --locked --release --package binary-analysis-mcp --target $env:RUST_TARGET --manifest-path .xsec-binary-analysis-source/Cargo.toml
+          $binaryAnalysisBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET/release/binary-analysis-mcp.exe"
+          if (-not (Test-Path -LiteralPath $binaryAnalysisBinary -PathType Leaf)) { throw 'Binary-analysis MCP binary is unavailable' }
+          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp.exe')
+      - name: Build the Windows binary-analysis engine bundle
+        if: ${{ matrix.shell == 'pwsh' }}
+        shell: msys2 {0}
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          temp_root="$(cygpath -u "$RUNNER_TEMP")"
+          python .xsec-binary-analysis-source/scripts/build_engine_bundle.py --target "$RUST_TARGET" --work-root "$temp_root/xsec-binary-analysis-engine-$RUST_TARGET" --output "$temp_root/xsec-native-sidecars/binary-engine" --jobs 4
+      - name: Upload the reviewed native MCP sidecars
+        uses: actions/upload-artifact@v4
+        with:
+          name: xsec-native-sidecars-${{ matrix.rust_target }}
+          path: ${{ runner.temp }}/xsec-native-sidecars
+          if-no-files-found: error
+          retention-days: 1
+  build-sign-and-open-pr:
+    needs: [resolve-native-sidecar-source, build-native-sidecars]
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      pull_number: ${{ steps.publish.outputs.pull_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+      - name: Record the current Factory revision after acquiring the publication slot
+        id: current-main
+        run: |
+          set -euo pipefail
+          source_revision="$(git rev-parse HEAD)"
+          [ "$source_revision" = "$(git rev-parse origin/main)" ] || {
+            echo "Current checkout is not Factory main." >&2
+            exit 1
+          }
+          echo "source_revision=$source_revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Download reviewed native MCP sidecars
+        uses: actions/download-artifact@v4
+        with:
+          pattern: xsec-native-sidecars-*
+          path: ${{ runner.temp }}/xsec-native-sidecars
+          merge-multiple: false
+      - name: Read the complete active Registry batch from Factory main
+        id: registry
+        run: |
+          set -euo pipefail
+          batch="$(jq -cer '
+            [.plugins[]
+              | select(.status == "active" and .pluginId != "com.xsec.project-workspace")
+              | {plugin_id:.pluginId, repository:.source.repository, beta_ref:.source.refs.beta, stable_ref:.source.refs.stable}
+            ]
+            | if length == 13
+                and all(.[]; (.plugin_id | type == "string") and (.repository | type == "string")
+                  and .beta_ref == "refs/heads/beta" and .stable_ref == "refs/heads/main")
+              then sort_by(.plugin_id)
+              else error("Factory must have exactly thirteen active plugin sources") end
+          ' .xsec-factory/official-registry.json)"
+          owners="$(printf '%s' "$batch" | jq -cer '[.[].repository | split("/")[0]] | unique | if length == 1 then .[0] else error("a Marketplace batch cannot span source owners") end')"
+          repositories="$(printf '%s' "$batch" | jq -cer '[.[].repository | split("/")[1]] | unique | join(",")')"
+          {
+            echo 'batch<<EOF'
+            echo "$batch"
+            echo EOF
+            echo "source_owner=$owners"
+            echo "source_repositories=$repositories"
+          } >> "$GITHUB_OUTPUT"
+      - name: Require the read-only Source App credentials
+        env:
+          APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          APP_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$APP_ID" =~ ^[1-9][0-9]*$ ]] || { echo "XSEC_MARKETPLACE_SOURCE_APP_ID is not configured." >&2; exit 1; }
+          [ -n "$APP_KEY" ] || { echo "XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY is not configured." >&2; exit 1; }
+      - name: Create one exact-scope source reader token
+        id: source-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+          owner: ${{ steps.registry.outputs.source_owner }}
+          repositories: ${{ steps.registry.outputs.source_repositories }}
+          permission-contents: read
+      - name: Fetch, validate, and stage every current source ref
+        id: sources
+        env:
+          BATCH: ${{ steps.registry.outputs.batch }}
+          SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}
+          BINARY_ANALYSIS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.binary_source_sha }}
+        run: |
+          set -euo pipefail
+          roots="$RUNNER_TEMP/xsec-marketplace-batch-sources"
+          records="$RUNNER_TEMP/xsec-marketplace-batch-sources.jsonl"
+          mkdir -p "$roots"
+          : > "$records"
+          token_header="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 | tr -d '\n')"
+          unset SOURCE_TOKEN
+          while IFS= read -r item; do
+            plugin_id="$(printf '%s' "$item" | jq -er .plugin_id)"
+            repository="$(printf '%s' "$item" | jq -er .repository)"
+            beta_ref="$(printf '%s' "$item" | jq -er .beta_ref)"
+            stable_ref="$(printf '%s' "$item" | jq -er .stable_ref)"
+            root="$roots/$plugin_id"
+            git init --quiet "$root"
+            git -C "$root" config core.hooksPath /dev/null
+            git -C "$root" config core.autocrlf false
+            url="https://github.com/${repository}.git"
+            env -u GIT_CONFIG -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS -u GIT_SSL_NO_VERIFY \
+              -u GIT_HTTP_PROXY -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy -u GIT_EXEC_PATH \
+              GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_ALLOW_PROTOCOL=https GIT_TERMINAL_PROMPT=0 \
+              git -C "$root" -c credential.helper= -c core.hooksPath=/dev/null -c http.sslVerify=true \
+                -c http.followRedirects=false -c protocol.allow=never -c protocol.https.allow=always \
+                -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header" fetch --no-tags "$url" \
+                "$beta_ref:refs/remotes/xsec-batch/beta" "$stable_ref:refs/remotes/xsec-batch/main"
+            beta_sha="$(git -C "$root" rev-parse refs/remotes/xsec-batch/beta)"
+            main_sha="$(git -C "$root" rev-parse refs/remotes/xsec-batch/main)"
+            [[ "$beta_sha" =~ ^[a-f0-9]{40}$ && "$main_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Source heads are invalid for ${plugin_id}." >&2; exit 1; }
+            if [ "$plugin_id" = "com.xsec.binary-analysis" ] && [ "$beta_sha" != "$BINARY_ANALYSIS_SOURCE_SHA" ]; then
+              echo "Binary-analysis Beta moved after its build revision was resolved." >&2
+              exit 1
+            fi
+            git -C "$root" -c core.hooksPath=/dev/null checkout --detach --quiet "$beta_sha"
+            git -C "$root" -c core.hooksPath=/dev/null worktree add --detach "$root-main" refs/remotes/xsec-batch/main
+            python scripts/external_source_factory.py prepare --plugin-id "$plugin_id" --channel beta --source-sha "$beta_sha" >/dev/null
+            python scripts/external_source_factory.py stage-beta --plugin-id "$plugin_id" --source-root "$root" >/dev/null
+            git update-index --add --cacheinfo "160000,${beta_sha},plugins/${plugin_id}"
+            jq -cn --arg plugin_id "$plugin_id" --arg beta_sha "$beta_sha" --arg main_sha "$main_sha" --arg root "$root" \
+              '{plugin_id:$plugin_id,beta_sha:$beta_sha,main_sha:$main_sha,source_root:$root}' >> "$records"
+          done < <(printf '%s' "$BATCH" | jq -rc '.[]')
+          unset token_header
+          jq -ces . "$records" > "$RUNNER_TEMP/xsec-marketplace-batch-sources.json"
+          echo "records=$RUNNER_TEMP/xsec-marketplace-batch-sources.json" >> "$GITHUB_OUTPUT"
+      - name: Build immutable releases and bind the exact source batch
+        env:
+          RECORDS: ${{ steps.sources.outputs.records }}
+          DELIVERY_KEY: ${{ inputs.delivery_key }}
+          NATIVE_SIDECARS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.source_sha }}
+          BINARY_ANALYSIS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.binary_source_sha }}
+        run: |
+          set -euo pipefail
+          sidecar_root="$RUNNER_TEMP/xsec-native-sidecars"
+          native_inputs=()
+          retained_revisions=()
+          source_revisions=()
+          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis; do
+            record="$(jq -ce --arg plugin_id "$native_plugin" '.[] | select(.plugin_id == $plugin_id)' "$RECORDS")"
+            source_root="$(printf '%s' "$record" | jq -er .source_root)"
+            retained_root="$RUNNER_TEMP/xsec-retained-native-beta/${native_plugin}"
+            if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
+              reusable=false
+            else
+              reconciliation="$(python scripts/external_source_factory.py --json reconcile-retained-native-beta --plugin-id "$native_plugin" --source-root "$source_root" --destination "$retained_root")"
+              reusable="$(printf '%s' "$reconciliation" | jq -er .reusable)"
+            fi
+            if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then
+              reusable=false
+            fi
+            if [ "$reusable" = "true" ]; then
+              retained_revision="$(printf '%s' "$reconciliation" | jq -er .source_revision)"
+              retained_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$retained_revision")
+              while IFS= read -r retained; do
+                rust_target="$(printf '%s' "$retained" | jq -er .rust_target)"
+                binary="$(printf '%s' "$retained" | jq -er .path)"
+                [ -f "$binary" ] && [ ! -L "$binary" ] && [ -s "$binary" ] || { echo "Retained Beta sidecar is unavailable for $native_plugin@$rust_target." >&2; exit 1; }
+                native_inputs+=("--native-sidecar-input" "$native_plugin@$rust_target=$binary")
+              done < <(printf '%s' "$reconciliation" | jq -rc '.inputs | fromjson | .[]')
+              continue
+            fi
+            echo "${native_plugin} does not reproduce its retained Beta; requiring current protected sidecars."
+            case "$native_plugin" in
+              com.xsec.attack-path) binary_name="attack-path-mcp" ;;
+              com.xsec.asset-discovery) binary_name="asset-discovery-mcp" ;;
+              com.xsec.workspace.browser) binary_name="browser-mcp" ;;
+              com.xsec.binary-analysis) binary_name="binary-analysis-mcp" ;;
+              *) echo "Unknown native plugin: $native_plugin" >&2; exit 1 ;;
+            esac
+            for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+              binary="$sidecar_root/xsec-native-sidecars-$target/$binary_name"
+              [ -f "$binary" ] && [ ! -L "$binary" ] && [ -s "$binary" ] || { echo "Protected builder did not provide a $native_plugin sidecar for $target." >&2; exit 1; }
+              native_inputs+=("--native-sidecar-input" "$native_plugin@$target=$binary")
+              if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then
+                runtime="$sidecar_root/xsec-native-sidecars-$target/browser-runtime"
+                [ -d "$runtime" ] && [ ! -L "$runtime" ] || { echo "Protected builder did not provide a browser runtime for $target." >&2; exit 1; }
+                native_inputs+=("--packed-runtime-input" "$native_plugin@$target=$runtime")
+              fi
+              if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
+                runtime="$sidecar_root/xsec-native-sidecars-$target/binary-engine"
+                [ -d "$runtime" ] && [ ! -L "$runtime" ] || { echo "Protected builder did not provide the binary engine bundle for $target." >&2; exit 1; }
+                native_inputs+=("--packed-runtime-input" "$native_plugin@$target=$runtime")
+              fi
+            done
+            if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
+              source_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$BINARY_ANALYSIS_SOURCE_SHA")
+            fi
+          done
+          python scripts/build_market.py --clean --native-sidecar-source-revision "$NATIVE_SIDECARS_SOURCE_SHA" "${retained_revisions[@]}" "${source_revisions[@]}" "${native_inputs[@]}"
+          while IFS= read -r item; do
+            plugin_id="$(printf '%s' "$item" | jq -er .plugin_id)"
+            beta_sha="$(printf '%s' "$item" | jq -er .beta_sha)"
+            main_sha="$(printf '%s' "$item" | jq -er .main_sha)"
+            source_root="$(printf '%s' "$item" | jq -er .source_root)"
+            python scripts/external_source_factory.py record-beta --plugin-id "$plugin_id" --source-sha "$beta_sha" --publisher xsec-marketplace-bot >/dev/null
+            gate="$(python scripts/external_source_factory.py --json check-main-rebuild --plugin-id "$plugin_id" --source-root "${source_root}-main")"
+            state="$(printf '%s' "$gate" | jq -er .state)"
+            python scripts/external_source_factory.py record-status --plugin-id "$plugin_id" --beta-sha "$beta_sha" \
+              --main-gate-sha "$main_sha" --state "$state" --delivery-id "batch-${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}" \
+              --factory-run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null
+          done < <(jq -rc '.[]' "$RECORDS")
+      - name: Skip an unchanged current batch
+        id: decision
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain --untracked-files=all -- .agents/plugins .xsec-factory)"
+          if [ -n "$changed" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            git restore --source=HEAD --worktree -- .agents/plugins .xsec-factory
+            test -z "$(git status --porcelain --untracked-files=all)" || { echo "Batch no-op left unexpected files." >&2; exit 1; }
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate the complete immutable Factory candidate
+        if: ${{ steps.decision.outputs.publish == 'true' }}
+        env:
+          XSEC_MARKETPLACE_SOURCE_REVISION: ${{ steps.current-main.outputs.source_revision }}
+        run: |
+          set -euo pipefail
+          python scripts/validate_market.py source --source-root . --built-root .
+          python scripts/external_source_factory.py validate --allow-unsigned-publication-proofs --allow-unsigned-active-release-sidecars
+      - name: Create one generated Factory PR
+        if: ${{ steps.decision.outputs.publish == 'true' }}
+        id: publish
+        env:
+          GH_TOKEN: ${{ secrets.XSEC_MARKETPLACE_PUBLISH_TOKEN }}
+          DELIVERY_KEY: ${{ inputs.delivery_key }}
+          TRIGGER_LABEL: ${{ inputs.trigger_label }}
+        run: |
+          set -euo pipefail
+          [ -n "$GH_TOKEN" ] || { echo "XSEC_MARKETPLACE_PUBLISH_TOKEN is not configured." >&2; exit 1; }
+          [[ "$DELIVERY_KEY" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$ ]] || { echo "Factory delivery key is invalid." >&2; exit 1; }
+          [[ "$TRIGGER_LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$ ]] || { echo "Factory trigger label is invalid." >&2; exit 1; }
+          git add -A .agents/plugins .xsec-factory plugins
+          git diff --cached --quiet && { echo "Current batch was not staged." >&2; exit 1; }
+          git config user.name "xsec-marketplace[bot]"
+          git config user.email "xsec-marketplace[bot]@users.noreply.github.com"
+          git commit -m "chore: synchronize current Marketplace source batch"
+          branch="xsec-marketplace/batch-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git push --set-upstream origin "$branch"
+          body="Generated from Factory trigger ${TRIGGER_LABEL} with delivery ${DELIVERY_KEY} after reading all active Registry source heads. This PR contains one immutable version batch and is finalized only while every recorded source ref remains exact."
+          pull_url="$(gh pr create --base main --head "$branch" --title "chore: synchronize Marketplace source batch" --body "$body")"
+          pull_number="${pull_url##*/}"
+          [[ "$pull_number" =~ ^[1-9][0-9]*$ ]] || { echo "Generated Factory PR number is invalid." >&2; exit 1; }
+          echo "pull_number=$pull_number" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,93 @@
+name: Finalize selected generated Marketplace PR
+
+on:
+  workflow_run:
+    workflows: [Automatically finalize generated Marketplace PR]
+    types: [completed]
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: xsec-marketplace-final-selector-main
+  cancel-in-progress: false
+
+jobs:
+  select-exact-generated-pr:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      pull_number: ${{ steps.pr.outputs.pull_number }}
+      eligible: ${{ steps.pr.outputs.eligible }}
+    steps:
+      - name: Require the preceding unprivileged selector to have run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${UPSTREAM_RUN_ID}/jobs?per_page=100")"
+          printf '%s' "$jobs" | jq -e '
+            any(.jobs[]?; .name == "select-exact-generated-pr" and .conclusion == "success")
+          ' >/dev/null || {
+            echo "The preceding Marketplace selector did not complete." >&2
+            exit 1
+          }
+      - name: Resolve one exact ready current-baseline Factory PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          [[ "$main_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Factory main revision is invalid." >&2; exit 1; }
+          prs="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&per_page=100")"
+          matches="$(printf '%s' "$prs" | jq -cer --arg repository "$GITHUB_REPOSITORY" --arg main_sha "$main_sha" '
+            [.[][] | select(
+              .head.repo.full_name == $repository
+              and .base.sha == $main_sha
+              and (.head.ref | test("^xsec-marketplace/(publish-|batch-|default-set-|external-beta-|external-version-|external-stable-|promote-stable-|stage-first-party-adoption-|adopt-first-party-|refresh-retained-sidecar-|layout-signatures-|root-package-layout-)"))
+            )]
+          ')"
+          ready_matches='[]'
+          while IFS= read -r candidate; do
+            candidate_number="$(printf '%s' "$candidate" | jq -er '.number')"
+            candidate_head="$(printf '%s' "$candidate" | jq -er '.head.sha')"
+            [[ "$candidate_number" =~ ^[1-9][0-9]*$ ]] || { echo "Generated PR number is invalid." >&2; exit 1; }
+            [[ "$candidate_head" =~ ^[a-f0-9]{40}$ ]] || { echo "Generated PR head revision is invalid." >&2; exit 1; }
+            candidate_checks="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${candidate_head}/check-runs?per_page=100")"
+            if printf '%s' "$candidate_checks" | jq -e '
+              any(.check_runs[]?; .name == "source-gate" and .status == "completed" and .conclusion == "success")
+            ' >/dev/null && printf '%s' "$candidate_checks" | jq -e '
+              any(.check_runs[]?; .name == "source-freshness-gate" and .status == "completed" and .conclusion == "success")
+            ' >/dev/null; then
+              ready_matches="$(printf '%s' "$ready_matches" | jq -cer --argjson candidate "$candidate" '. + [$candidate]')"
+            fi
+          done < <(printf '%s' "$matches" | jq -rc '.[]')
+          count="$(printf '%s' "$ready_matches" | jq -er 'length')"
+          if [ "$count" = "0" ]; then
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$count" = "1" ] || { echo "expected one ready current-baseline generated PR" >&2; exit 1; }
+          pull_number="$(printf '%s' "$ready_matches" | jq -er '.[0].number')"
+          head_branch="$(printf '%s' "$ready_matches" | jq -er '.[0].head.ref')"
+          head_sha="$(printf '%s' "$ready_matches" | jq -er '.[0].head.sha')"
+          [[ "$pull_number" =~ ^[1-9][0-9]*$ ]] || { echo "Generated PR number is invalid." >&2; exit 1; }
+          [[ "$head_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Generated PR head revision is invalid." >&2; exit 1; }
+          case "$head_branch" in
+            xsec-marketplace/publish-*|xsec-marketplace/batch-*|xsec-marketplace/default-set-*|xsec-marketplace/external-version-*|xsec-marketplace/external-beta-*|xsec-marketplace/external-stable-*|xsec-marketplace/promote-stable-*|xsec-marketplace/stage-first-party-adoption-*|xsec-marketplace/adopt-first-party-*|xsec-marketplace/refresh-retained-sidecar-*|xsec-marketplace/layout-signatures-*|xsec-marketplace/root-package-layout-*) ;;
+            *) echo "Validated PR is not an automatically finalizable Factory branch." >&2; exit 1 ;;
+          esac
+          echo "pull_number=$pull_number" >> "$GITHUB_OUTPUT"
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+  final-revalidate-and-merge:
+    needs: select-exact-generated-pr
+    if: ${{ !cancelled() && needs.select-exact-generated-pr.result == 'success' && needs.select-exact-generated-pr.outputs.eligible == 'true' }}
+    uses: ./.github/workflows/final-merge-generated-marketplace-pr.yml
+    with:
+      pull_number: ${{ needs.select-exact-generated-pr.outputs.pull_number }}
+    secrets: inherit

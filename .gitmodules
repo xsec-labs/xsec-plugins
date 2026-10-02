@@ -1,0 +1,48 @@
+[submodule "plugins/com.xsec.asset-discovery"]
+	path = plugins/com.xsec.asset-discovery
+	url = https://github.com/xsec-labs/xsec-plugin-asset-discovery.git
+	branch = beta
+[submodule "plugins/com.xsec.attack-path"]
+	path = plugins/com.xsec.attack-path
+	url = https://github.com/xsec-labs/xsec-plugin-attack-path.git
+	branch = beta
+[submodule "plugins/com.xsec.binary-analysis"]
+	path = plugins/com.xsec.binary-analysis
+	url = https://github.com/xsec-labs/xsec-plugin-binary-analysis.git
+	branch = beta
+[submodule "plugins/com.xsec.jwt-analysis"]
+	path = plugins/com.xsec.jwt-analysis
+	url = https://github.com/xsec-labs/xsec-plugin-jwt-analysis.git
+	branch = beta
+[submodule "plugins/com.xsec.system-terminal"]
+	path = plugins/com.xsec.system-terminal
+	url = https://github.com/xsec-labs/xsec-plugin-system-terminal.git
+	branch = beta
+[submodule "plugins/com.xsec.workspace.approvals"]
+	path = plugins/com.xsec.workspace.approvals
+	url = https://github.com/xsec-labs/xsec-plugin-approvals.git
+	branch = beta
+[submodule "plugins/com.xsec.workspace.browser"]
+	path = plugins/com.xsec.workspace.browser
+	url = https://github.com/xsec-labs/xsec-plugin-browser.git
+	branch = beta
+[submodule "plugins/com.xsec.workspace.conversation-tree"]
+	path = plugins/com.xsec.workspace.conversation-tree
+	url = https://github.com/xsec-labs/xsec-plugin-conversation-tree.git
+	branch = beta
+[submodule "plugins/com.xsec.workspace.files"]
+	path = plugins/com.xsec.workspace.files
+	url = https://github.com/xsec-labs/xsec-plugin-files.git
+	branch = beta
+[submodule "plugins/com.xsec.workspace.project-outcomes"]
+	path = plugins/com.xsec.workspace.project-outcomes
+	url = https://github.com/xsec-labs/xsec-plugin-project-outcomes.git
+	branch = beta
+[submodule "plugins/com.xsec.workspace.sub-agent"]
+	path = plugins/com.xsec.workspace.sub-agent
+	url = https://github.com/xsec-labs/xsec-plugin-sub-agent.git
+	branch = beta
+[submodule "plugins/com.xsec.workspace.traffic"]
+	path = plugins/com.xsec.workspace.traffic
+	url = https://github.com/xsec-labs/xsec-plugin-traffic.git
+	branch = beta

@@ -1,0 +1,502 @@
+name: Dispatch merged Marketplace revision to Desktop smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      marketplace_revision:
+        description: Exact validated Factory Beta merge SHA to retry while its current status remains waiting_for_smoke
+        required: true
+        type: string
+      plugin_id:
+        description: Registered plugin ID for the current signed Beta smoke recovery
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: xsec-marketplace-smoke-${{ inputs.marketplace_revision || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-reviewed-publication:
+    # A source-gated Factory PR deliberately remains pending after the
+    # publisher exits. Main is the final merge boundary; no
+    # unmerged publication workflow is allowed to contact Desktop.
+    runs-on: ubuntu-latest
+    outputs:
+      eligible: ${{ steps.classify.outputs.eligible }}
+      channel: ${{ steps.classify.outputs.channel }}
+      marketplace_revision: ${{ steps.classify.outputs.marketplace_revision }}
+      source_sha: ${{ steps.classify.outputs.source_sha }}
+      sources: ${{ steps.classify.outputs.sources }}
+      source_app_required: ${{ steps.classify.outputs.source_app_required }}
+      source_owner: ${{ steps.classify.outputs.source_owner }}
+      source_repositories: ${{ steps.classify.outputs.source_repositories }}
+      manual_recovery: ${{ steps.classify.outputs.manual_recovery }}
+      registered_recovery: ${{ steps.classify.outputs.registered_recovery }}
+      recovery_tuples: ${{ steps.classify.outputs.recovery_tuples }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # A push runner may start after a newer main commit exists. Inspect
+          # the immutable event revision, not the mutable branch ref, so a
+          # validated publication cannot be stranded by unrelated later work.
+          ref: ${{ inputs.marketplace_revision || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Classify only a signed generated Beta or Stable merge
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          INPUT_MARKETPLACE_REVISION: ${{ inputs.marketplace_revision }}
+          INPUT_PLUGIN_ID: ${{ inputs.plugin_id }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || {
+            echo "Desktop smoke dispatch requires refs/heads/main." >&2
+            exit 1
+          }
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            [[ "$INPUT_MARKETPLACE_REVISION" =~ ^[a-f0-9]{40}$ ]] || {
+              echo "Manual Desktop smoke recovery requires an exact Factory revision SHA." >&2
+              exit 1
+            }
+            AFTER="$INPUT_MARKETPLACE_REVISION"
+            git fetch --no-tags origin "$AFTER" "refs/heads/main:refs/remotes/origin/main"
+            git cat-file -e "$AFTER^{commit}"
+            git merge-base --is-ancestor "$AFTER" origin/main || {
+              echo "Manual Desktop smoke recovery revision is not retained by Factory main." >&2
+              exit 1
+            }
+            BEFORE="$(git rev-parse "$AFTER^")"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            BEFORE="$PUSH_BEFORE"
+            AFTER="$(git rev-parse HEAD)"
+          else
+            echo "Desktop smoke dispatch accepts only main pushes or manual recovery." >&2
+            exit 1
+          fi
+          [[ "$BEFORE" =~ ^[a-f0-9]{40}$ && "$AFTER" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "Desktop smoke dispatch has invalid Factory revision metadata." >&2
+            exit 1
+          }
+          [ "$AFTER" = "$(git rev-parse HEAD)" ] || {
+            echo "Checkout does not match the pushed main revision." >&2
+            exit 1
+          }
+          if [ -f .xsec-factory/layout-migration.json ]; then
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            echo "Pending Factory layout migration cannot dispatch Desktop smoke."
+            exit 0
+          fi
+          registered_recovery=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_PLUGIN_ID" ]; then
+            [[ "$INPUT_PLUGIN_ID" =~ ^[a-z0-9]([a-z0-9.-]{0,62}[a-z0-9])?$ ]] || {
+              echo "Manual signed smoke recovery plugin ID is invalid." >&2
+              exit 1
+            }
+            [ "$AFTER" = "$(git rev-parse origin/main)" ] || {
+              echo "Manual registered-plugin smoke recovery requires the current protected Factory revision." >&2
+              exit 1
+            }
+            # Reuse only the active registered plugin status after the
+            # complete Factory model validates its immutable provenance. The
+            # KMS verification below authenticates every current sidecar
+            # before this tuple is allowed to reach Desktop.
+            python scripts/external_source_factory.py validate
+            registration="$(jq -cer --arg plugin_id "$INPUT_PLUGIN_ID" '
+              .plugins | [ .[] | select(.pluginId == $plugin_id) ]
+              | if length == 1 and .[0].status == "active" then .[0] else error("expected one active registered plugin") end
+            ' .xsec-factory/official-registry.json)"
+            status="$(jq -cer . ".xsec-factory/official-status/${INPUT_PLUGIN_ID}.json")"
+            releases="$(jq -cer . ".xsec-factory/snapshots/${INPUT_PLUGIN_ID}/.xsec-market/releases.json")"
+            result="$(jq -cn --arg plugin_id "$INPUT_PLUGIN_ID" --argjson registration "$registration" --argjson status "$status" --argjson releases "$releases" '
+              if $status.schemaVersion != 1
+                or $status.pluginId != $plugin_id
+                or $status.publication.state != "waiting_for_smoke"
+                or $status.source.repository != $registration.source.repository
+                or $status.source.path != $registration.source.path
+                or $status.source.refs != $registration.source.refs
+                or ($status.source.betaSha | type != "string" or test("^[a-f0-9]{40}$") | not)
+                or ($status.source.mainGateSha | type != "string" or test("^[a-f0-9]{40}$") | not)
+                or ($status.release.betaReleaseId | type != "string")
+                or $releases.channels.beta.releaseId != $status.release.betaReleaseId
+              then error("Registered plugin recovery status is not bound to the active signed Beta tuple")
+              else {
+                kind:"beta-smoke-ready",
+                promotions:[{
+                  plugin_id:$plugin_id,
+                  release_id:$status.release.betaReleaseId,
+                  source:{repository:$status.source.repository,ref:$status.source.refs.beta,sha:$status.source.betaSha},
+                  main_source:{repository:$status.source.repository,ref:$status.source.refs.stable,sha:$status.source.mainGateSha}
+                }]
+              }
+              end
+            ')"
+            registered_recovery=true
+          else
+            result="$(python scripts/verify_merged_stable_promotion.py --root . --before "$BEFORE" --after "$AFTER" --classify)"
+          fi
+          kind="$(printf '%s' "$result" | jq -er .kind)"
+          if [ "$kind" != "beta" ] && [ "$kind" != "beta-smoke-ready" ] && [ "$kind" != "stable" ]; then
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            echo "No generated Marketplace release transition is present."
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$kind" != "beta" ] && [ "$kind" != "beta-smoke-ready" ]; then
+            echo "Manual Desktop smoke recovery accepts only an already validated Beta transition." >&2
+            exit 1
+          fi
+          # The diff verifier proves the allowed transition and the following
+          # verifier authenticates every exact post-merge document byte with
+          # the pinned KMS issuer. A title, merge subject, or changed path
+          # alone can never enter the Desktop path.
+          verification="$(python scripts/kms_marketplace_publisher.py --root . --verify-active-marketplace-signatures)"
+          source_sha="$(printf '%s' "$verification" | jq -er .source_revision)"
+          [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "Merged Marketplace signatures did not provide a canonical source revision." >&2
+            exit 1
+          }
+          git merge-base --is-ancestor "$source_sha" "$AFTER" || {
+            echo "Merged Marketplace signature source revision is not retained by Factory main." >&2
+            exit 1
+          }
+          # A Registry-bound external Stable completion can skip only when its
+          # current KMS-authenticated status proves the exact terminal Desktop
+          # callback. A source tuple alone is insufficient: guarded manual
+          # external Stable recovery intentionally records promoting_stable,
+          # while legacy built-ins can promote or roll back retained releases.
+          # Do not use jq -e here: false is the expected result for every
+          # Beta and legacy/manual Stable transition, not a workflow failure.
+          callback_bound_stable="$(printf '%s' "$result" | jq -cr '
+            if .kind != "stable" then false
+            elif (.promotions | type) != "array" or (.promotions | length) == 0 then false
+            elif all(.promotions[];
+              (.source | type) == "object"
+              and (.source.repository | type) == "string"
+              and .source.ref == "refs/heads/main"
+              and (.source.sha | type) == "string"
+              and (.release_id | type) == "string") then true
+            else false
+            end
+          ')"
+          if [ "$callback_bound_stable" = "true" ]; then
+            while IFS= read -r promotion; do
+              plugin_id="$(printf '%s' "$promotion" | jq -er .plugin_id)"
+              stable_repository="$(printf '%s' "$promotion" | jq -er .source.repository)"
+              stable_sha="$(printf '%s' "$promotion" | jq -er .source.sha)"
+              stable_release_id="$(printf '%s' "$promotion" | jq -er .release_id)"
+              status_path=".xsec-factory/official-status/${plugin_id}.json"
+              [ -f "$status_path" ] || { callback_bound_stable=false; break; }
+              status="$(jq -cer . "$status_path")"
+              if ! printf '%s' "$status" | jq -e \
+                --arg plugin_id "$plugin_id" --arg repository "$stable_repository" \
+                --arg stable_sha "$stable_sha" --arg release_id "$stable_release_id" '
+                  .schemaVersion == 1
+                  and .pluginId == $plugin_id
+                  and .trustTier == "first-party"
+                  and .source.repository == $repository
+                  and .source.refs == {beta:"refs/heads/beta",stable:"refs/heads/main"}
+                  and .source.stableSha == $stable_sha
+                  and .release.betaReleaseId == $release_id
+                  and .release.stableReleaseId == $release_id
+                  and .publication.state == "published"
+                  and (.publication.smokeRunUrl | type == "string" and test("^https://github\\.com/xsec-labs/xSecDesktop/actions/runs/[1-9][0-9]*$"))
+                  and (.publication.marketplaceRevision | type == "string" and test("^[a-f0-9]{40}$"))
+                ' >/dev/null; then
+                callback_bound_stable=false
+                break
+              fi
+            done < <(printf '%s' "$result" | jq -rc '.promotions[]')
+            if [ "$callback_bound_stable" = "true" ]; then
+              echo "eligible=false" >> "$GITHUB_OUTPUT"
+              echo "All registered Stable completions are bound to their KMS-authenticated Beta Desktop smoke callbacks; no duplicate Desktop dispatch is needed."
+              exit 0
+            fi
+          fi
+          printf '%s\n' "$result" > "$RUNNER_TEMP/marketplace-publication.json"
+          manual_recovery=false
+          recovery_tuples='[]'
+          # A mixed generated batch is valid: source events can leave some
+          # registered plugins waiting for a reproducible main while another
+          # plugin is already ready for Desktop smoke. Start with every
+          # source-backed promotion, then reduce Beta batches to the exact
+          # waiting-for-smoke subset before requesting source credentials or
+          # contacting Desktop.
+          selected_promotions="$(printf '%s' "$result" | jq -cer '[.promotions[] | select(.source != null)]')"
+          if { [ "$kind" = "beta" ] || [ "$kind" = "beta-smoke-ready" ]; } && [ "$(printf '%s' "$selected_promotions" | jq -r length)" -gt 0 ]; then
+            # A source-main event may have rebuilt the selected immutable
+            # Beta byte-for-byte, or it may be ahead/behind it.  The Beta PR
+            # itself is valid in either case, but only the former gets a
+            # Desktop smoke run.  Validate the complete Factory status model
+            # before treating its wait state as a dispatch decision.
+            python scripts/external_source_factory.py validate
+            waiting_for_beta=()
+            smoke_promotions=()
+            while IFS= read -r promotion; do
+              plugin_id="$(printf '%s' "$promotion" | jq -er .plugin_id)"
+              release_id="$(printf '%s' "$promotion" | jq -er .release_id)"
+              beta_sha="$(printf '%s' "$promotion" | jq -er .source.sha)"
+              status_path=".xsec-factory/official-status/${plugin_id}.json"
+              [ -f "$status_path" ] || {
+                echo "Registered Beta publication ${plugin_id} has no Factory status." >&2
+                exit 1
+              }
+              status="$(jq -cer . "$status_path")"
+              status_release="$(printf '%s' "$status" | jq -er .release.betaReleaseId)"
+              status_sha="$(printf '%s' "$status" | jq -er .source.betaSha)"
+              [ "$status_release" = "$release_id" ] && [ "$status_sha" = "$beta_sha" ] || {
+                echo "Factory status is not bound to the validated Beta source/release tuple for ${plugin_id}." >&2
+                exit 1
+              }
+              if [ "$kind" = "beta-smoke-ready" ]; then
+                main_sha="$(printf '%s' "$promotion" | jq -er .main_source.sha)"
+                status_main_sha="$(printf '%s' "$status" | jq -er .source.mainGateSha)"
+                [ "$status_main_sha" = "$main_sha" ] || {
+                  echo "Factory status is not bound to the validated registered-main source SHA for ${plugin_id}." >&2
+                  exit 1
+                }
+              fi
+              status_state="$(printf '%s' "$status" | jq -er .publication.state)"
+              case "$status_state" in
+                waiting_for_smoke) smoke_promotions+=("$promotion") ;;
+                waiting_for_beta) waiting_for_beta+=("$plugin_id") ;;
+                *)
+                  echo "Validated Beta publication ${plugin_id} has an invalid smoke state: ${status_state}." >&2
+                  exit 1
+                  ;;
+              esac
+            done < <(printf '%s' "$selected_promotions" | jq -rc '.[]')
+            if [ "${#smoke_promotions[@]}" -eq 0 ]; then
+              echo "eligible=false" >> "$GITHUB_OUTPUT"
+              echo "No registered Beta promotion is currently waiting for Desktop smoke; still awaiting a reproducible main for: ${waiting_for_beta[*]:-none}."
+              exit 0
+            fi
+            selected_promotions="$(printf '%s\n' "${smoke_promotions[@]}" | jq -sc '.')"
+          fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # A manual retry must never manufacture a dispatch for a legacy
+            # built-in transition. Use only the already-selected smoke subset,
+            # and retain every exact source/release tuple for the final
+            # current-Factory revalidation immediately before dispatch.
+            recovery_tuples="$(printf '%s' "$selected_promotions" | jq -cer '
+              [ .[]
+                | if (.source | type) == "object" then
+                    {
+                      plugin_id: .plugin_id,
+                      beta_sha: .source.sha,
+                      beta_release_id: .release_id
+                    }
+                  else
+                    error("manual Desktop smoke recovery requires every promotion to have a registered source")
+                  end
+              ]
+              | if length > 0 then . else error("manual Desktop smoke recovery requires at least one source-backed promotion") end
+            ')"
+            manual_recovery=true
+          fi
+          # The source token and source revalidation are scoped only to the
+          # selected waiting-for-smoke promotions. A waiting_for_beta sibling
+          # cannot block, broaden, or be advanced by this Desktop smoke run.
+          sources="$(printf '%s' "$selected_promotions" | jq -c '[.[] | .source, (.main_source // empty)]')"
+          # Use a single source-owner scope and an exact, deduplicated
+          # repository list. A candidate that crosses owners fails closed;
+          # this dispatcher must never request an owner-wide source token.
+          source_scope="$(printf '%s' "$sources" | jq -cer '
+            if type != "array" then error("publication sources must be an array")
+            elif length == 0 then {required:false, owner:"", repositories:""}
+            else
+              [ .[] | .repository ] as $repositories
+              | if all($repositories[]; type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_.-]{0,38}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")) then . else error("publication source repository is invalid") end
+              | ($repositories | map(split("/")[0]) | unique) as $owners
+              | if ($owners | length) != 1 then error("one Factory candidate cannot span multiple source owners")
+                else {required:true, owner:$owners[0], repositories:($repositories | map(split("/")[1]) | unique | join(","))}
+                end
+            end
+          ' )"
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+          desktop_channel="$kind"
+          [ "$desktop_channel" != "beta-smoke-ready" ] || desktop_channel="beta"
+          echo "channel=$desktop_channel" >> "$GITHUB_OUTPUT"
+          echo "marketplace_revision=$AFTER" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "sources=$sources" >> "$GITHUB_OUTPUT"
+          echo "source_app_required=$(printf '%s' "$source_scope" | jq -er .required)" >> "$GITHUB_OUTPUT"
+          echo "source_owner=$(printf '%s' "$source_scope" | jq -er .owner)" >> "$GITHUB_OUTPUT"
+          echo "source_repositories=$(printf '%s' "$source_scope" | jq -er .repositories)" >> "$GITHUB_OUTPUT"
+          echo "manual_recovery=$manual_recovery" >> "$GITHUB_OUTPUT"
+          echo "registered_recovery=$registered_recovery" >> "$GITHUB_OUTPUT"
+          echo "recovery_tuples=$recovery_tuples" >> "$GITHUB_OUTPUT"
+      - name: Require the merged generated PR and source gate
+        if: ${{ steps.classify.outputs.eligible == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AFTER: ${{ steps.classify.outputs.marketplace_revision }}
+          REGISTERED_RECOVERY: ${{ steps.classify.outputs.registered_recovery }}
+        run: |
+          set -euo pipefail
+          # A Factory-main commit can be associated with more than one page
+          # of PRs.  `gh api --paginate` emits one JSON array per page, so
+          # slurp the complete response before selecting the generated Factory
+          # PR. Inspecting only the first page could reject
+          # the real PR or, worse, select the wrong same-commit PR.
+          prs="$(gh api --paginate --slurp -H 'Accept: application/vnd.github+json' "repos/${GITHUB_REPOSITORY}/commits/${AFTER}/pulls?per_page=100")"
+          pr="$(printf '%s' "$prs" | jq -cer --arg registered_recovery "$REGISTERED_RECOVERY" '
+            [.[][] | select(.merged_at != null and .base.ref == "main"
+              and ($registered_recovery == "true" or (.head.ref | startswith("xsec-marketplace/")))
+            )]
+            | if length == 1 then .[0] else error("expected exactly one merged Factory generated PR") end
+          ')"
+          head_sha="$(printf '%s' "$pr" | jq -er .head.sha)"
+          head_ref="$(printf '%s' "$pr" | jq -er .head.ref)"
+          # The source gate is the PR validation for this immutable candidate
+          # head. A manually-dispatched validation is not the PR gate.
+          # GitHub's workflow-runs API drops `pull_requests` after the PR is
+          # merged, so bind the result to the exact generated branch and head
+          # instead.  The selected PR already proves that branch is the one
+          # validated and merged into this immutable Factory revision.
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/validate.yml/runs?head_sha=${head_sha}&event=pull_request&per_page=100")"
+          printf '%s' "$runs" | jq -e --arg head_sha "$head_sha" --arg head_ref "$head_ref" '
+            any(.workflow_runs[];
+              .status == "completed"
+              and .conclusion == "success"
+              and .event == "pull_request"
+              and .head_sha == $head_sha
+              and .head_branch == $head_ref
+            )
+          ' >/dev/null || {
+            echo "The merged generated PR has no successful immutable Factory source gate." >&2
+            exit 1
+          }
+
+  dispatch-desktop-smoke:
+    needs: verify-reviewed-publication
+    if: ${{ needs.verify-reviewed-publication.outputs.eligible == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require the read-only Source App credentials for registered source proofs
+        if: ${{ needs.verify-reviewed-publication.outputs.source_app_required == 'true' }}
+        env:
+          SOURCE_APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_APP_ID" =~ ^[1-9][0-9]*$ ]] || {
+            echo "XSEC_MARKETPLACE_SOURCE_APP_ID must be configured as a read-only GitHub App ID." >&2
+            exit 1
+          }
+          [ -n "$SOURCE_APP_PRIVATE_KEY" ] || {
+            echo "XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY must be configured for registered source proofs." >&2
+            exit 1
+          }
+      # actions/create-github-app-token v2.2.2, pinned after resolving the
+      # signed v2.2.2 tag. This token can read only the exact source
+      # repositories bound into the validated Marketplace revision.
+      - name: Create a narrowly scoped read-only Source App token
+        id: source-token
+        if: ${{ needs.verify-reviewed-publication.outputs.source_app_required == 'true' }}
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+          owner: ${{ needs.verify-reviewed-publication.outputs.source_owner }}
+          repositories: ${{ needs.verify-reviewed-publication.outputs.source_repositories }}
+          permission-contents: read
+      - name: Revalidate each registered source branch at the exact merge boundary
+        env:
+          SOURCES: ${{ needs.verify-reviewed-publication.outputs.sources }}
+          SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          token_header="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 | tr -d '\n')"
+          unset SOURCE_TOKEN
+          while IFS= read -r source; do
+            repository="$(printf '%s' "$source" | jq -er .repository)"
+            ref="$(printf '%s' "$source" | jq -er .ref)"
+            expected_sha="$(printf '%s' "$source" | jq -er .sha)"
+            remote="https://github.com/${repository}.git"
+            actual_sha="$(env -u GIT_CONFIG -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS \
+              -u GIT_SSL_NO_VERIFY -u GIT_HTTP_PROXY -u HTTP_PROXY -u http_proxy \
+              -u HTTPS_PROXY -u https_proxy -u GIT_EXEC_PATH \
+              GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_ALLOW_PROTOCOL=https \
+              GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c http.followRedirects=false \
+              -c http.https://github.com/.extraheader= \
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header" \
+              ls-remote "$remote" "$ref" | awk 'NR == 1 { print $1 }')"
+            [ "$actual_sha" = "$expected_sha" ] || {
+              echo "Registered ${repository} ${ref} advanced after the generated PR was validated; refusing Desktop smoke." >&2
+              exit 1
+            }
+          done < <(printf '%s' "$SOURCES" | jq -rc '.[]')
+          unset token_header
+      - name: Check out current protected Factory state for manual recovery
+        if: ${{ needs.verify-reviewed-publication.outputs.manual_recovery == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          fetch-depth: 1
+          path: .xsec-current-factory
+          persist-credentials: false
+      - name: Revalidate current Factory recovery tuple immediately before dispatch
+        if: ${{ needs.verify-reviewed-publication.outputs.manual_recovery == 'true' }}
+        env:
+          RECOVERY_TUPLES: ${{ needs.verify-reviewed-publication.outputs.recovery_tuples }}
+        run: |
+          set -euo pipefail
+          current_root=".xsec-current-factory"
+          [ -e "$current_root/.git" ] || {
+            echo "Current protected Factory checkout is unavailable for manual Desktop smoke recovery." >&2
+            exit 1
+          }
+          # The status sidecar is not trusted merely because it is readable.
+          # Authenticate the current KMS proof before accepting any current
+          # waiting-for-smoke tuple, then bind every tuple to its immutable
+          # Beta release ID and source SHA.
+          python "$current_root/scripts/kms_marketplace_publisher.py" --root "$current_root" --verify-active-marketplace-signatures >/dev/null
+          while IFS= read -r tuple; do
+            plugin_id="$(printf '%s' "$tuple" | jq -er .plugin_id)"
+            beta_sha="$(printf '%s' "$tuple" | jq -er .beta_sha)"
+            beta_release_id="$(printf '%s' "$tuple" | jq -er .beta_release_id)"
+            redispatch="$(python "$current_root/scripts/external_source_factory.py" --root "$current_root" --json needs-smoke-redispatch --plugin-id "$plugin_id" --beta-sha "$beta_sha" --beta-release-id "$beta_release_id")"
+            [ "$(printf '%s' "$redispatch" | jq -er .redispatch)" = "true" ] || {
+              echo "Manual Desktop smoke recovery no longer matches the current signed waiting_for_smoke Beta tuple for ${plugin_id}." >&2
+              exit 1
+            }
+          done < <(printf '%s' "$RECOVERY_TUPLES" | jq -rc '.[]')
+      - name: Dispatch the validated Beta or Stable revision to Desktop smoke
+        env:
+          XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN: ${{ secrets.XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN }}
+          SOURCE_SHA: ${{ needs.verify-reviewed-publication.outputs.source_sha }}
+          MARKETPLACE_REVISION: ${{ needs.verify-reviewed-publication.outputs.marketplace_revision }}
+          MARKETPLACE_CHANNEL: ${{ needs.verify-reviewed-publication.outputs.channel }}
+        run: |
+          set -euo pipefail
+          [ -n "$XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN" ] || {
+            echo "The protected Desktop smoke-dispatch token is required." >&2
+            exit 1
+          }
+          payload="$(jq -cn \
+            --arg source_repository "$GITHUB_REPOSITORY" \
+            --arg source_ref "refs/heads/main" \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg marketplace_revision "$MARKETPLACE_REVISION" \
+            --arg channel "$MARKETPLACE_CHANNEL" \
+            '{event_type:"xsec_official_marketplace_published",client_payload:{source_repository:$source_repository,source_ref:$source_ref,source_sha:$source_sha,marketplace_revision:$marketplace_revision,channel:$channel}}')"
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --data "$payload" \
+            https://api.github.com/repos/xsec-labs/xSecDesktop/dispatches

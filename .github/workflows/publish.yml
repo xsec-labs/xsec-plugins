@@ -1,0 +1,1098 @@
+name: Publish immutable marketplace version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      maintenance:
+        description: Select the protected default-set transition or a normal release operation.
+        required: false
+        default: release
+        type: choice
+        options: [release, align_desktop_defaults]
+      plugin_id:
+        description: Optional registered external plugin ID. Leave empty for the built-in publisher.
+        required: false
+        type: string
+      source_sha:
+        description: Exact lowercase 40-character SHA in the registered external repository.
+        required: false
+        type: string
+      native_sidecars_source_sha:
+        description: Exact lowercase 40-character xSecDesktop main SHA used to build the reviewed native MCP sidecars.
+        required: false
+        type: string
+      reconcile_delivery_key:
+        description: Opaque trusted source-delivery key used only to return a reconciler receipt.
+        required: false
+        type: string
+      reconcile_dispatch_nonce:
+        description: Exact protected reconcile run and attempt that requested the receipt.
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  # Serialize immutable release-index updates.
+  group: xsec-marketplace-publish-main
+  cancel-in-progress: false
+
+jobs:
+  enforce-publish-ref:
+    runs-on: ubuntu-latest
+    outputs:
+      maintenance: ${{ steps.request.outputs.maintenance }}
+      channel: ${{ steps.request.outputs.channel }}
+    steps:
+      - name: Require main and a complete publication request
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          MAINTENANCE: ${{ inputs.maintenance }}
+          CHANNEL: beta
+          PLUGIN_ID: ${{ inputs.plugin_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          NATIVE_SIDECARS_SOURCE_SHA: ${{ inputs.native_sidecars_source_sha }}
+          RELEASE_ID: ""
+          EXPECTED_BETA_SHA: ""
+          SMOKE_RUN_URL: ""
+          SMOKE_MARKETPLACE_REVISION: ""
+          RECONCILE_DELIVERY_KEY: ${{ inputs.reconcile_delivery_key }}
+          RECONCILE_DISPATCH_NONCE: ${{ inputs.reconcile_dispatch_nonce }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              [ "$REF" = "refs/heads/main" ] || {
+                echo "Manual marketplace publishing is permitted only from refs/heads/main." >&2
+                exit 1
+              }
+              channel="${CHANNEL:-beta}"
+              maintenance="${MAINTENANCE:-release}"
+              ;;
+            push)
+              [ "$REF" = "refs/heads/main" ] || {
+                echo "Automatic default-set maintenance accepts only refs/heads/main." >&2
+                exit 1
+              }
+              [ -z "$PLUGIN_ID" ] && [ -z "$SOURCE_SHA" ] && [ -z "$RELEASE_ID" ] \
+                && [ -z "$EXPECTED_BETA_SHA" ] && [ -z "$SMOKE_RUN_URL" ] && [ -z "$SMOKE_MARKETPLACE_REVISION" ] \
+                && [ -z "$RECONCILE_DELIVERY_KEY" ] && [ -z "$RECONCILE_DISPATCH_NONCE" ] || {
+                  echo "Automatic default-set maintenance accepts no release, source, smoke, or reconcile inputs." >&2
+                  exit 1
+                }
+              channel=beta
+              maintenance=align_desktop_defaults
+              ;;
+            *)
+              echo "Marketplace publication event is unsupported." >&2
+              exit 1
+              ;;
+          esac
+          case "$channel" in
+            beta|stable) ;;
+            *) echo "channel must be beta or stable." >&2; exit 1 ;;
+          esac
+          case "$maintenance" in
+            release|align_desktop_defaults) ;;
+            *) echo "maintenance must be release or align_desktop_defaults." >&2; exit 1 ;;
+          esac
+          requires_native_sidecars=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$maintenance" = "release" ] \
+            && { [ -z "$PLUGIN_ID" ] || [ "$channel" = "beta" ]; }; then
+            requires_native_sidecars=true
+          fi
+          if "$requires_native_sidecars"; then
+            [[ "$NATIVE_SIDECARS_SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]] || {
+              echo "Beta packaging requires native_sidecars_source_sha from xSecDesktop main." >&2
+              exit 1
+            }
+          elif [ -n "$NATIVE_SIDECARS_SOURCE_SHA" ]; then
+            echo "native_sidecars_source_sha is valid only when the Factory rebuilds Beta artifacts." >&2
+            exit 1
+          fi
+          if [ -n "$RECONCILE_DELIVERY_KEY" ] && ! [[ "$RECONCILE_DELIVERY_KEY" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$ ]]; then
+            echo "reconcile_delivery_key is not a bounded delivery identifier." >&2
+            exit 1
+          fi
+          if [ -n "$RECONCILE_DISPATCH_NONCE" ] && ! [[ "$RECONCILE_DISPATCH_NONCE" =~ ^[1-9][0-9]*\.[1-9][0-9]*$ ]]; then
+            echo "reconcile_dispatch_nonce must be a positive run-id.attempt pair." >&2
+            exit 1
+          fi
+          { [ -z "$RECONCILE_DELIVERY_KEY" ] && [ -z "$RECONCILE_DISPATCH_NONCE" ]; } \
+            || { [ -n "$RECONCILE_DELIVERY_KEY" ] && [ -n "$RECONCILE_DISPATCH_NONCE" ]; } || {
+              echo "A reconcile receipt requires both delivery key and dispatch nonce." >&2
+              exit 1
+            }
+          if [ "$maintenance" = "align_desktop_defaults" ]; then
+            [ "$channel" = "beta" ] && [ -z "$PLUGIN_ID" ] && [ -z "$SOURCE_SHA" ] && [ -z "$RELEASE_ID" ] \
+              && [ -z "$EXPECTED_BETA_SHA" ] && [ -z "$SMOKE_RUN_URL" ] && [ -z "$SMOKE_MARKETPLACE_REVISION" ] \
+              && [ -z "$RECONCILE_DELIVERY_KEY" ] && [ -z "$RECONCILE_DISPATCH_NONCE" ] || {
+                echo "Default-set maintenance accepts no release, source, smoke, or reconcile inputs." >&2
+                exit 1
+              }
+          elif [ -n "$PLUGIN_ID" ]; then
+            [ "$EVENT_NAME" = "workflow_dispatch" ] || { echo "External source publication requires an explicit main dispatch." >&2; exit 1; }
+            [ -n "$SOURCE_SHA" ] || { echo "External source publication requires source_sha." >&2; exit 1; }
+            if [ "$channel" = "beta" ] && { [ -n "$RELEASE_ID" ] || [ -n "$EXPECTED_BETA_SHA" ]; }; then
+              echo "release_id and expected_beta_sha are only valid for an external Stable promotion." >&2
+              exit 1
+            fi
+            if [ "$channel" = "stable" ] && [ -z "$RELEASE_ID" ]; then
+              echo "External Stable promotion requires release_id." >&2
+              exit 1
+            fi
+            if [ -n "$SMOKE_RUN_URL" ] || [ -n "$SMOKE_MARKETPLACE_REVISION" ]; then
+              [ "$channel" = "stable" ] && [ -n "$SMOKE_RUN_URL" ] && [ -n "$SMOKE_MARKETPLACE_REVISION" ] && [ -n "$EXPECTED_BETA_SHA" ] || {
+                echo "Smoke outcome metadata and expected_beta_sha are valid only as a complete external Stable promotion binding." >&2
+                exit 1
+              }
+            elif [ -n "$EXPECTED_BETA_SHA" ]; then
+              echo "expected_beta_sha requires the complete Desktop smoke outcome binding." >&2
+              exit 1
+            fi
+          else
+            [ -z "$SOURCE_SHA" ] && [ -z "$RELEASE_ID" ] && [ -z "$EXPECTED_BETA_SHA" ] && [ -z "$SMOKE_RUN_URL" ] && [ -z "$SMOKE_MARKETPLACE_REVISION" ] && [ "$channel" = "beta" ] || {
+              echo "Built-in publication accepts no source_sha/release_id/expected_beta_sha and only the beta channel; provide plugin_id for an external publication." >&2
+              exit 1
+            }
+          fi
+          echo "maintenance=$maintenance" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+  classify-generated-main-change:
+    needs: enforce-publish-ref
+    # A main push maintains the Desktop default set. Explicit main dispatches
+    # retain the normal release/recovery contract.
+    # Already signed Factory merges are classified before either path signs.
+    if: ${{ needs.enforce-publish-ref.result == 'success' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    outputs:
+      generated: ${{ steps.classify.outputs.generated }}
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'push' }}
+        with:
+          fetch-depth: 0
+          ref: refs/heads/main
+      - uses: actions/setup-python@v5
+        if: ${{ github.event_name == 'push' }}
+        with:
+          python-version: "3.13"
+      - name: Detect an already signed Factory generated merge without using its title
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Manual publication already requires an explicit main
+            # request in enforce-publish-ref.  It is not a main-push merge
+            # and therefore cannot be a Factory-generated change to suppress.
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$EVENT_NAME" = "push" ] || {
+            echo "Unsupported marketplace publication event for merge classification." >&2
+            exit 1
+          }
+          [[ "$BEFORE" =~ ^[a-f0-9]{40}$ && "$AFTER" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "Factory main push has invalid Git revision metadata." >&2
+            exit 1
+          }
+          result="$(python scripts/verify_merged_stable_promotion.py --root . --before "$BEFORE" --after "$AFTER" --classify)"
+          kind="$(printf '%s' "$result" | jq -er .kind)"
+          if [ "$kind" = "beta" ] || [ "$kind" = "stable" ] || [ "$kind" = "beta-smoke-ready" ]; then
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          elif [ "$kind" = "maintenance" ] || [ "$kind" = "stable-maintenance" ]; then
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          fi
+  resolve-binary-analysis-source:
+    needs: [enforce-publish-ref, classify-generated-main-change]
+    if: ${{ needs.enforce-publish-ref.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+      - name: Resolve the exact binary-analysis source revision
+        id: source
+        env:
+          PLUGIN_ID: ${{ inputs.plugin_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CHANNEL: ${{ needs.enforce-publish-ref.outputs.channel }}
+        run: |
+          set -euo pipefail
+          if [ "$PLUGIN_ID" = "com.xsec.binary-analysis" ] && [ "$CHANNEL" = "beta" ]; then
+            source_sha="$SOURCE_SHA"
+          else
+            source_sha="$(git rev-parse 'HEAD:plugins/com.xsec.binary-analysis')"
+          fi
+          [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "Binary-analysis source revision is not a gitlink or exact source SHA." >&2
+            exit 1
+          }
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+  build-native-sidecars:
+    needs: [enforce-publish-ref, classify-generated-main-change, resolve-binary-analysis-source]
+    if: >-
+      ${{ needs.enforce-publish-ref.result == 'success' && needs.classify-generated-main-change.outputs.generated != 'true' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.maintenance != 'align_desktop_defaults' }}
+    runs-on: ${{ matrix.runner }}
+    environment: production
+    timeout-minutes: 240
+    permissions:
+      actions: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            shell: bash
+            rust_target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            shell: bash
+            rust_target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            shell: bash
+            rust_target: x86_64-unknown-linux-gnu
+          - runner: windows-2022
+            shell: pwsh
+            rust_target: x86_64-pc-windows-msvc
+    steps:
+      - name: Require the dedicated read-only Desktop source App
+        env:
+          XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
+          XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "$XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID" ]
+          [ -n "$XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY" ]
+      - name: Create a scoped Desktop source token
+        id: desktop-source-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY }}
+          owner: xsec-labs
+          repositories: xSecDesktop
+          permission-contents: read
+      - name: Check out the exact Desktop source revision
+        uses: actions/checkout@v4
+        with:
+          repository: xsec-labs/xSecDesktop
+          github-server-url: https://github.com
+          ref: ${{ inputs.native_sidecars_source_sha }}
+          token: ${{ steps.desktop-source-token.outputs.token }}
+          path: .xsec-desktop-source
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify the source revision is current Desktop main
+        env:
+          GH_TOKEN: ${{ steps.desktop-source-token.outputs.token }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.native_sidecars_source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git -C .xsec-desktop-source rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA" ]
+          desktop_main="$(gh api repos/xsec-labs/xSecDesktop/commits/main --jq .sha)"
+          [ "$desktop_main" = "$EXPECTED_SOURCE_SHA" ] || {
+            echo "native_sidecars_source_sha must be the current xSecDesktop main revision." >&2
+            exit 1
+          }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install macOS engine build tools
+        if: ${{ matrix.shell == 'bash' && startsWith(matrix.runner, 'macos-') }}
+        run: brew install meson ninja pkg-config
+      - name: Install Linux engine build tools
+        if: ${{ matrix.shell == 'bash' && matrix.runner == 'ubuntu-24.04' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential meson ninja-build pkg-config patchelf
+      - name: Require the read-only binary plugin Source App
+        env:
+          XSEC_MARKETPLACE_SOURCE_APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          [ -n "$XSEC_MARKETPLACE_SOURCE_APP_ID" ] && [ -n "$XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY" ] || {
+            echo "Binary-analysis builds require the read-only Marketplace Source App." >&2
+            exit 1
+          }
+      - name: Create a scoped binary plugin source token
+        id: binary-source-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+          owner: xsec-labs
+          repositories: xsec-plugin-binary-analysis
+          permission-contents: read
+      - name: Check out the exact binary-analysis source revision
+        uses: actions/checkout@v4
+        with:
+          repository: xsec-labs/xsec-plugin-binary-analysis
+          github-server-url: https://github.com
+          ref: ${{ needs.resolve-binary-analysis-source.outputs.source_sha }}
+          token: ${{ steps.binary-source-token.outputs.token }}
+          path: .xsec-binary-analysis-source
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify the binary-analysis source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.resolve-binary-analysis-source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git -C .xsec-binary-analysis-source rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA" ]
+          [ -f .xsec-binary-analysis-source/scripts/build_engine_bundle.py ] || {
+            echo "Binary-analysis source revision does not contain its pinned engine builder." >&2
+            exit 1
+          }
+      - uses: msys2/setup-msys2@v2
+        if: ${{ matrix.shell == 'pwsh' }}
+        with:
+          msystem: UCRT64
+          update: false
+          install: base-devel git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-python
+      - name: Build the reviewed native MCP sidecars
+        if: ${{ matrix.shell == 'bash' }}
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          CARGO_TARGET_DIR: ${{ runner.temp }}/xsec-native-sidecars-cargo
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --package xsec-attack-path-mcp --package xsec-asset-discovery-mcp --target "$RUST_TARGET" --manifest-path .xsec-desktop-source/Cargo.toml
+          output_dir="$RUNNER_TEMP/xsec-native-sidecars"
+          mkdir -p "$output_dir"
+          attack_path_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/xsec-attack-path-mcp"
+          asset_discovery_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/xsec-asset-discovery-mcp"
+          [ -f "$attack_path_binary" ] && [ ! -L "$attack_path_binary" ] && [ -s "$attack_path_binary" ]
+          [ -f "$asset_discovery_binary" ] && [ ! -L "$asset_discovery_binary" ] && [ -s "$asset_discovery_binary" ]
+          cp "$attack_path_binary" "$output_dir/attack-path-mcp"
+          cp "$asset_discovery_binary" "$output_dir/asset-discovery-mcp"
+          chmod 0755 "$output_dir/attack-path-mcp"
+          chmod 0755 "$output_dir/asset-discovery-mcp"
+          cargo build --locked --release --package binary-analysis-mcp --target "$RUST_TARGET" --manifest-path .xsec-binary-analysis-source/Cargo.toml
+          cp "$CARGO_TARGET_DIR/$RUST_TARGET/release/binary-analysis-mcp" "$output_dir/binary-analysis-mcp"
+          chmod 0755 "$output_dir/binary-analysis-mcp"
+          python .xsec-binary-analysis-source/scripts/build_engine_bundle.py --target "$RUST_TARGET" --work-root "$RUNNER_TEMP/xsec-binary-analysis-engine-$RUST_TARGET" --output "$output_dir/binary-engine" --jobs 4
+      - name: Build the reviewed native MCP sidecars
+        if: ${{ matrix.shell == 'pwsh' }}
+        shell: pwsh
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          CARGO_TARGET_DIR: ${{ runner.temp }}/xsec-native-sidecars-cargo
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package xsec-attack-path-mcp --package xsec-asset-discovery-mcp --target $env:RUST_TARGET --manifest-path .xsec-desktop-source/Cargo.toml
+          $outputDirectory = Join-Path $env:RUNNER_TEMP 'xsec-native-sidecars'
+          New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+          $attackPathBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\xsec-attack-path-mcp.exe"
+          $assetDiscoveryBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\xsec-asset-discovery-mcp.exe"
+          if (-not (Test-Path -LiteralPath $attackPathBinary -PathType Leaf)) { throw 'Attack-path MCP binary is unavailable' }
+          if (-not (Test-Path -LiteralPath $assetDiscoveryBinary -PathType Leaf)) { throw 'Asset-discovery MCP binary is unavailable' }
+          Copy-Item -LiteralPath $attackPathBinary -Destination (Join-Path $outputDirectory 'attack-path-mcp')
+          Copy-Item -LiteralPath $assetDiscoveryBinary -Destination (Join-Path $outputDirectory 'asset-discovery-mcp')
+          cargo build --locked --release --package binary-analysis-mcp --target $env:RUST_TARGET --manifest-path .xsec-binary-analysis-source\Cargo.toml
+          $binaryAnalysisBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\binary-analysis-mcp.exe"
+          if (-not (Test-Path -LiteralPath $binaryAnalysisBinary -PathType Leaf)) { throw 'Binary-analysis MCP binary is unavailable' }
+          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp.exe')
+      - name: Build the Windows binary-analysis engine bundle
+        if: ${{ matrix.shell == 'pwsh' }}
+        shell: msys2 {0}
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          temp_root="$(cygpath -u "$RUNNER_TEMP")"
+          python .xsec-binary-analysis-source/scripts/build_engine_bundle.py --target "$RUST_TARGET" --work-root "$temp_root/xsec-binary-analysis-engine-$RUST_TARGET" --output "$temp_root/xsec-native-sidecars/binary-engine" --jobs 4
+      - name: Upload the reviewed native MCP sidecars
+        uses: actions/upload-artifact@v4
+        with:
+          name: xsec-native-sidecars-${{ matrix.rust_target }}
+          path: ${{ runner.temp }}/xsec-native-sidecars
+          if-no-files-found: error
+          retention-days: 1
+  sign-and-publish:
+    needs: [enforce-publish-ref, classify-generated-main-change, resolve-binary-analysis-source, build-native-sidecars]
+    if: >-
+      ${{ always() && needs.enforce-publish-ref.result == 'success' && needs.resolve-binary-analysis-source.result == 'success' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref == 'refs/heads/main' && needs.classify-generated-main-change.outputs.generated != 'true' && (needs.build-native-sidecars.result == 'success' || needs.build-native-sidecars.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require the protected marketplace publication token before checkout or KMS
+        env:
+          XSEC_MARKETPLACE_PUBLISH_TOKEN: ${{ secrets.XSEC_MARKETPLACE_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "$XSEC_MARKETPLACE_PUBLISH_TOKEN" ]; then
+            echo "The protected marketplace publication token is required before checkout or KMS signing." >&2
+            exit 1
+          fi
+      # Workflow-level concurrency is acquired before this job begins. Resolve
+      # main only after acquiring that slot: a queued run's event SHA may have
+      # become stale while an earlier publication merged its signed index.
+      - name: Check out current Factory main after acquiring the publication slot
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/heads/main
+          # `git push` uses checkout's persisted credential, not GH_TOKEN.
+          # Keep that credential on the same narrowly scoped token used by
+          # the subsequent GitHub CLI calls.
+          token: ${{ secrets.XSEC_MARKETPLACE_PUBLISH_TOKEN }}
+      - name: Record the current protected source revision
+        id: current-main
+        run: |
+          source_revision="$(git rev-parse HEAD)"
+          [ "$source_revision" = "$(git rev-parse origin/main)" ] || { echo "Current checkout is not Factory main." >&2; exit 1; }
+          echo "source_revision=$source_revision" >> "$GITHUB_OUTPUT"
+      - name: Refuse to sign while this plugin has a generated Factory PR awaiting final merge
+        env:
+          GH_TOKEN: ${{ secrets.XSEC_MARKETPLACE_PUBLISH_TOKEN }}
+          CHANNEL: ${{ needs.enforce-publish-ref.outputs.channel }}
+          PLUGIN_ID: ${{ inputs.plugin_id }}
+          MAINTENANCE: ${{ needs.enforce-publish-ref.outputs.maintenance }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_ID: ""
+          EXPECTED_BETA_SHA: ""
+          SMOKE_RUN_URL: ""
+          SMOKE_MARKETPLACE_REVISION: ""
+        run: |
+          set -euo pipefail
+          if [ -n "$PLUGIN_ID" ] && ! [[ "$PLUGIN_ID" =~ ^[a-z0-9]([a-z0-9.-]{0,62}[a-z0-9])?$ ]]; then
+            echo "plugin_id is unsafe." >&2
+            exit 1
+          fi
+          candidates="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&per_page=100" | jq -cer --arg repository "$GITHUB_REPOSITORY" '
+            [ .[][]
+              | select(.head.repo.full_name == $repository)
+              | select(.head.ref | startswith("xsec-marketplace/"))
+            ]
+          ')"
+          pending=()
+          while IFS= read -r candidate; do
+            number="$(printf '%s' "$candidate" | jq -er .number)"
+            branch="$(printf '%s' "$candidate" | jq -er .head.ref)"
+            head_sha="$(printf '%s' "$candidate" | jq -er .head.sha)"
+            [[ "$head_sha" =~ ^[a-f0-9]{40}$ ]] || {
+              echo "Generated Factory PR #${number} has an invalid head revision." >&2
+              exit 1
+            }
+            if [ -z "$PLUGIN_ID" ]; then
+              if [ "${MAINTENANCE:-release}" = "align_desktop_defaults" ]; then
+                [[ "$branch" == xsec-marketplace/default-set-* ]] && pending+=("#${number}:${branch}")
+              else
+                [[ "$branch" == xsec-marketplace/publish-* ]] && pending+=("#${number}:${branch}")
+              fi
+              continue
+            fi
+            metadata="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${number}")"
+            changed_file_count="$(printf '%s' "$metadata" | jq -er '.changed_files | if type == "number" and floor == . and . >= 0 then . else error("invalid changed_files") end')"
+            files="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${number}/files?per_page=100")"
+            returned_file_count="$(printf '%s' "$files" | jq -er '[.[][] | .filename] | if all(.[]; type == "string") then length else error("invalid PR filename") end')"
+            [ "$returned_file_count" -eq "$changed_file_count" ] || {
+              echo "Cannot completely inspect generated Factory PR #${number}; refusing to sign ${PLUGIN_ID}." >&2
+              exit 1
+            }
+            if printf '%s' "$files" | jq -e --arg plugin_id "$PLUGIN_ID" '
+              any(.[][];
+                .filename == ("plugins/" + $plugin_id)
+                or .filename == (".xsec-factory/official-status/" + $plugin_id + ".json")
+                or .filename == (".xsec-factory/snapshots/" + $plugin_id + "/.xsec-market/releases.json")
+              )
+            ' >/dev/null; then
+              if [ "$CHANNEL" != "stable" ]; then
+                pending+=("#${number}:${branch}")
+                continue
+              fi
+              # A manual Stable recovery has no immutable Desktop smoke
+              # binding, so it must serialize with every same-plugin Factory
+              # candidate. Only smoke-bound requests may distinguish an older
+              # terminal tuple from the current recovery request.
+              if [ -z "$SMOKE_RUN_URL" ]; then
+                pending+=("#${number}:${branch}")
+                continue
+              fi
+              # A historical terminal candidate must not strand a newer,
+              # smoke-bound Stable publication for the same plugin. It stays
+              # open for audit, but blocks a new request only when its exact
+              # source, release, and Desktop smoke tuple are identical.
+              candidate_status="$(gh api -H 'Accept: application/vnd.github.raw' "repos/${GITHUB_REPOSITORY}/contents/.xsec-factory/official-status/${PLUGIN_ID}.json?ref=${head_sha}")" || {
+                pending+=("#${number}:${branch}")
+                continue
+              }
+              if printf '%s' "$candidate_status" | jq -e \
+                --arg plugin_id "$PLUGIN_ID" \
+                --arg source_sha "$SOURCE_SHA" \
+                --arg release_id "$RELEASE_ID" \
+                --arg beta_sha "$EXPECTED_BETA_SHA" \
+                --arg smoke_url "$SMOKE_RUN_URL" \
+                --arg marketplace_revision "$SMOKE_MARKETPLACE_REVISION" '
+                  .pluginId == $plugin_id
+                  and .publication.state == "published"
+                  and .publication.smokeRunUrl == $smoke_url
+                  and .publication.marketplaceRevision == $marketplace_revision
+                  and .release.betaReleaseId == $release_id
+                  and .release.stableReleaseId == $release_id
+                  and .source.betaSha == $beta_sha
+                  and .source.stableSha == $source_sha
+                ' >/dev/null; then
+                pending+=("#${number}:${branch}")
+              fi
+            fi
+          done < <(printf '%s' "$candidates" | jq -rc '.[]')
+          if [ "${#pending[@]}" -gt 0 ]; then
+            printf 'The requested Marketplace transition is still awaiting source validation and final merge:\n%s\n' "${pending[*]}" >&2
+            exit 1
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Resolve the publication mode from Factory main
+        id: request
+        env:
+          INPUT_CHANNEL: ${{ needs.enforce-publish-ref.outputs.channel }}
+          INPUT_PLUGIN_ID: ${{ inputs.plugin_id }}
+          INPUT_MAINTENANCE: ${{ needs.enforce-publish-ref.outputs.maintenance }}
+        run: |
+          set -euo pipefail
+          channel="${INPUT_CHANNEL:-beta}"
+          maintenance="${INPUT_MAINTENANCE:-release}"
+          if [ "$maintenance" = "align_desktop_defaults" ]; then
+            echo "external=false" >> "$GITHUB_OUTPUT"
+            echo "maintenance=true" >> "$GITHUB_OUTPUT"
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+            echo "commit_title=chore: align Marketplace default set" >> "$GITHUB_OUTPUT"
+            echo "branch_prefix=default-set" >> "$GITHUB_OUTPUT"
+          elif [ -n "$INPUT_PLUGIN_ID" ]; then
+            echo "external=true" >> "$GITHUB_OUTPUT"
+            echo "maintenance=false" >> "$GITHUB_OUTPUT"
+            echo "channel=$channel" >> "$GITHUB_OUTPUT"
+            echo "commit_title=chore: publish external marketplace version" >> "$GITHUB_OUTPUT"
+            echo "branch_prefix=external-version" >> "$GITHUB_OUTPUT"
+          else
+            echo "external=false" >> "$GITHUB_OUTPUT"
+            echo "maintenance=false" >> "$GITHUB_OUTPUT"
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+            echo "commit_title=chore: publish marketplace version" >> "$GITHUB_OUTPUT"
+            echo "branch_prefix=publish" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Apply the reviewed Desktop default-set transition
+        if: ${{ steps.request.outputs.maintenance == 'true' }}
+        run: python scripts/maintain_marketplace_defaults.py --root .
+      - name: Download reviewed native MCP sidecars
+        if: ${{ steps.request.outputs.maintenance != 'true' && (steps.request.outputs.external != 'true' || steps.request.outputs.channel == 'beta') }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: xsec-native-sidecars-*
+          path: ${{ runner.temp }}/xsec-native-sidecars
+          merge-multiple: false
+      - name: Validate an external registry request before source access
+        id: external-request
+        if: ${{ steps.request.outputs.external == 'true' }}
+        env:
+          PLUGIN_ID: ${{ inputs.plugin_id }}
+          CHANNEL: ${{ steps.request.outputs.channel }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          python scripts/external_source_factory.py --github-output "$GITHUB_OUTPUT" prepare \
+            --plugin-id "$PLUGIN_ID" --channel "$CHANNEL" --source-sha "$SOURCE_SHA"
+      - name: Require the read-only external source App secrets
+        if: ${{ steps.request.outputs.external == 'true' }}
+        env:
+          XSEC_MARKETPLACE_SOURCE_APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          [ -n "$XSEC_MARKETPLACE_SOURCE_APP_ID" ] && [ -n "$XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY" ] || {
+            echo "Configure the read-only XSEC_MARKETPLACE_SOURCE_APP_ID and XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY production secrets." >&2
+            exit 1
+          }
+      - name: Create a read-only external source token
+        id: source-token
+        if: ${{ steps.request.outputs.external == 'true' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+          owner: ${{ steps.external-request.outputs.source_owner }}
+          repositories: ${{ steps.external-request.outputs.source_repo }}
+          # Request the minimum permission from the short-lived token as well
+          # as requiring the App installation itself to be source-read-only.
+          permission-contents: read
+      - name: Check out the exact external source commit in an isolated directory
+        if: ${{ steps.request.outputs.external == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.external-request.outputs.source_repository }}
+          # The official Factory intentionally supports GitHub.com only. Do
+          # not inherit a self-hosted or caller-provided GitHub server URL.
+          github-server-url: https://github.com
+          ref: ${{ steps.external-request.outputs.source_sha }}
+          token: ${{ steps.source-token.outputs.token }}
+          path: .xsec-factory-source
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Prove the exact external commit still heads its registered branch
+        if: ${{ steps.request.outputs.external == 'true' }}
+        env:
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+          SOURCE_REF: ${{ steps.external-request.outputs.source_ref }}
+          SOURCE_STABLE_REF: ${{ steps.external-request.outputs.stable_ref }}
+          SOURCE_CHANNEL: ${{ steps.request.outputs.channel }}
+          SOURCE_REPOSITORY: ${{ steps.external-request.outputs.source_repository }}
+          SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          token_header="$(printf 'x-access-token:%s' "$SOURCE_TOKEN" | base64 | tr -d '\n')"
+          # Keep the raw source-reader token out of every Git child process,
+          # including the local-config inspection below.
+          unset SOURCE_TOKEN
+          # `SOURCE_REPOSITORY` is emitted by the trusted allowlist parser,
+          # not copied from the dispatch input.  Do not fetch through the
+          # checkout's `origin`: Git URL rewrites and remote helpers can make
+          # a local remote name point somewhere other than the approved repo.
+          source_git_url="https://github.com/${SOURCE_REPOSITORY}.git"
+          if ! origin_url="$(env -u GIT_CONFIG -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+            git -C .xsec-factory-source config --local --no-includes --get-all remote.origin.url)"; then
+            echo "The isolated external checkout has no readable origin URL." >&2
+            exit 1
+          fi
+          case "$origin_url" in
+            "https://github.com/${SOURCE_REPOSITORY}"|"$source_git_url") ;;
+            *)
+              echo "The isolated external checkout did not retain the canonical GitHub HTTPS origin." >&2
+              exit 1
+              ;;
+          esac
+          source_config_keys="$(env -u GIT_CONFIG -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+            git -C .xsec-factory-source config --local --no-includes --name-only --list)"
+          unsafe_source_config="$(printf '%s\n' "$source_config_keys" | LC_ALL=C grep -E -i '^(url\..*\.(insteadof|pushinsteadof)|remote\..*\.(uploadpack|receivepack|vcs|proxy)|core\.gitproxy|http\..*|credential(\..*)?\.helper|protocol\..*|include(\..*)?\.path|includeif\..*\.path)$' || true)"
+          if [ -n "$unsafe_source_config" ]; then
+            echo "The isolated external checkout contains a forbidden Git transport override: $unsafe_source_config" >&2
+            exit 1
+          fi
+          # Do not place the token in a child environment.  The direct fetch
+          # uses only a fixed HTTPS URL, ignores system/global Git config,
+          # refuses redirects and all protocols except HTTPS, and writes to a
+          # local verified ref rather than a source-controlled remote name.
+          # This job starts only after the shared publication slot is acquired.
+          # A commit that was current when reconcile-source dispatched it must
+          # still be the exact ref head now; ancestry alone would permit a
+          # delayed old Beta to replace a newer delivery.
+          fetch_refspecs=("$SOURCE_REF:refs/remotes/xsec-factory-source/verified")
+          if [ "$SOURCE_CHANNEL" = "beta" ]; then
+            fetch_refspecs+=("$SOURCE_STABLE_REF:refs/remotes/xsec-factory-source/registered-main")
+          fi
+          env -u GIT_CONFIG -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS \
+            -u GIT_SSL_NO_VERIFY -u GIT_HTTP_PROXY -u HTTP_PROXY -u http_proxy \
+            -u HTTPS_PROXY -u https_proxy -u GIT_EXEC_PATH \
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_ALLOW_PROTOCOL=https GIT_TERMINAL_PROMPT=0 \
+            git -C .xsec-factory-source \
+              -c credential.helper= \
+              -c core.hooksPath=/dev/null \
+              -c http.sslVerify=true \
+              -c http.followRedirects=false \
+              -c protocol.allow=never \
+              -c protocol.https.allow=always \
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header" \
+              fetch --no-tags "$source_git_url" "${fetch_refspecs[@]}"
+          unset token_header
+          [ "$(git -C .xsec-factory-source rev-parse HEAD)" = "$SOURCE_SHA" ]
+          git -C .xsec-factory-source cat-file -e "$SOURCE_SHA^{commit}"
+          verified_head="$(git -C .xsec-factory-source rev-parse refs/remotes/xsec-factory-source/verified)"
+          [ "$verified_head" = "$SOURCE_SHA" ] || {
+            echo "The requested external source SHA no longer heads its registered branch." >&2
+            exit 1
+          }
+          git -C .xsec-factory-source merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/xsec-factory-source/verified
+          if git -C .xsec-factory-source config --local --no-includes --get-regexp '^http\..*\.extraheader$' >/dev/null; then
+            echo "The isolated external checkout retained an HTTP credential." >&2
+            exit 1
+          fi
+          if [ "$SOURCE_CHANNEL" = "beta" ]; then
+            # The comparison checkout is derived from the same authenticated,
+            # fixed-HTTPS fetch after the primary beta ref has been proven.
+            # It never runs plugin code and callers cannot select the main
+            # ref: both branch names came from Registry v2.
+            git -C .xsec-factory-source cat-file -e refs/remotes/xsec-factory-source/registered-main^{commit}
+            env -u GIT_CONFIG -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS \
+              GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+              git -C .xsec-factory-source -c core.hooksPath=/dev/null \
+                worktree add --detach ../.xsec-factory-source-main refs/remotes/xsec-factory-source/registered-main
+          fi
+      - name: Stage a static external Beta source snapshot
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'beta' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+        run: python scripts/external_source_factory.py stage-beta --plugin-id "$PLUGIN_ID" --source-root .xsec-factory-source
+      - name: Advance the first-party development Gitlink to the authenticated Beta source
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'beta' && steps.external-request.outputs.trust_tier == 'first-party' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PLUGIN_ID" =~ ^[a-z0-9]([a-z0-9.-]{0,62}[a-z0-9])?$ ]] || {
+            echo "First-party plugin ID is invalid." >&2
+            exit 1
+          }
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "Authenticated Beta source SHA is invalid." >&2
+            exit 1
+          }
+          git update-index --add --cacheinfo "160000,$SOURCE_SHA,plugins/$PLUGIN_ID"
+      - name: Verify external main rebuilds the selected immutable Beta release
+        id: external-stable
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'stable' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          RELEASE_ID: ""
+          EXPECTED_BETA_SHA: ""
+        run: |
+          set -euo pipefail
+          args=(--plugin-id "$PLUGIN_ID" --source-root .xsec-factory-source --release-id "$RELEASE_ID")
+          if [ -n "$EXPECTED_BETA_SHA" ]; then
+            args+=(--expected-beta-sha "$EXPECTED_BETA_SHA")
+          fi
+          python scripts/external_source_factory.py verify-stable "${args[@]}"
+          python scripts/promote_release.py --root . --plugin-id "$PLUGIN_ID" --release-id "$RELEASE_ID"
+          if git diff --quiet -- plugins; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Record immutable external Stable provenance after verification
+        # ``promote_release.py`` reports no diff when Stable already selected
+        # this exact Beta. The smoke path still needs a Stable source event
+        # before it can bind a terminal outcome, so record (or idempotently
+        # retain) the verified provenance regardless of pointer movement.
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'stable' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+          RELEASE_ID: ""
+          PUBLISHER: ${{ github.actor }}
+        run: |
+          python scripts/external_source_factory.py record-stable \
+            --plugin-id "$PLUGIN_ID" --source-sha "$SOURCE_SHA" --release-id "$RELEASE_ID" --publisher "$PUBLISHER"
+      - name: Build an immutable beta release with reviewed native sidecars
+        if: ${{ steps.request.outputs.maintenance != 'true' && (steps.request.outputs.external != 'true' || steps.request.outputs.channel == 'beta') }}
+        env:
+          EXTERNAL: ${{ steps.request.outputs.external }}
+          TARGET_PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          NATIVE_SIDECARS_SOURCE_SHA: ${{ inputs.native_sidecars_source_sha }}
+          BINARY_ANALYSIS_SOURCE_SHA: ${{ needs.resolve-binary-analysis-source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          sidecar_root="$RUNNER_TEMP/xsec-native-sidecars"
+          native_inputs=()
+          retained_revisions=()
+          source_revisions=()
+          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis; do
+            if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then
+              retained_source_root="$RUNNER_TEMP/xsec-retained-native-source/$native_plugin"
+              retained_root="$RUNNER_TEMP/xsec-retained-native-beta/$native_plugin"
+              mkdir -p "$retained_source_root/plugins"
+              cp -R ".xsec-factory/snapshots/$native_plugin/." "$retained_source_root/"
+              reconciliation="$(python scripts/external_source_factory.py --json reconcile-retained-native-beta \
+                --plugin-id "$native_plugin" --source-root "$retained_source_root" --destination "$retained_root")"
+              [ "$(printf '%s' "$reconciliation" | jq -er .reusable)" = "true" ] || {
+                echo "Untargeted native plugin $native_plugin does not reproduce its retained Beta." >&2
+                exit 1
+              }
+              retained_revision="$(printf '%s' "$reconciliation" | jq -er .source_revision)"
+              retained_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$retained_revision")
+              while IFS= read -r retained; do
+                rust_target="$(printf '%s' "$retained" | jq -er .rust_target)"
+                binary="$(printf '%s' "$retained" | jq -er .path)"
+                [ -f "$binary" ] && [ ! -L "$binary" ] && [ -s "$binary" ] || {
+                  echo "Retained Beta sidecar is unavailable for $native_plugin@$rust_target." >&2
+                  exit 1
+                }
+                native_inputs+=("--native-sidecar-input" "$native_plugin@$rust_target=$binary")
+              done < <(printf '%s' "$reconciliation" | jq -rc '.inputs | fromjson | .[]')
+              continue
+            fi
+            case "$native_plugin" in
+              com.xsec.attack-path) binary_name="attack-path-mcp" ;;
+              com.xsec.asset-discovery) binary_name="asset-discovery-mcp" ;;
+              com.xsec.workspace.browser) binary_name="browser-mcp" ;;
+              com.xsec.binary-analysis) binary_name="binary-analysis-mcp" ;;
+              *) echo "Unknown native plugin: $native_plugin" >&2; exit 1 ;;
+            esac
+            for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+              binary="$sidecar_root/xsec-native-sidecars-$target/$binary_name"
+              [ -f "$binary" ] && [ ! -L "$binary" ] && [ -s "$binary" ] || {
+                echo "Protected builder did not provide a $native_plugin sidecar for $target." >&2
+                exit 1
+              }
+              native_inputs+=("--native-sidecar-input" "$native_plugin@$target=$binary")
+              if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
+                runtime="$sidecar_root/xsec-native-sidecars-$target/binary-engine"
+                [ -d "$runtime" ] && [ ! -L "$runtime" ] || {
+                  echo "Protected builder did not provide the binary engine bundle for $target." >&2
+                  exit 1
+                }
+                native_inputs+=("--packed-runtime-input" "$native_plugin@$target=$runtime")
+              fi
+            done
+            if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
+              source_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$BINARY_ANALYSIS_SOURCE_SHA")
+            fi
+          done
+          build_args=(--clean --native-sidecar-source-revision "$NATIVE_SIDECARS_SOURCE_SHA")
+          build_args+=("${retained_revisions[@]}")
+          build_args+=("${source_revisions[@]}")
+          build_args+=("${native_inputs[@]}")
+          python scripts/build_market.py "${build_args[@]}"
+      - name: Gate external Beta smoke on deterministic registered main rebuild
+        id: main-gate
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'beta' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+        run: |
+          # A differing main is an expected release-ordering state. The
+          # helper only compares deterministic package identity and writes no
+          # release, provenance, or pointer data. Record the exact protected
+          # source-main head alongside that decision: the generated PR is
+          # authenticated asynchronously, so the finalizer must re-read this same
+          # ref before it is allowed to enter Desktop smoke.
+          main_gate_sha="$(git -C .xsec-factory-source rev-parse refs/remotes/xsec-factory-source/registered-main)"
+          [[ "$main_gate_sha" =~ ^[a-f0-9]{40}$ ]] || {
+            echo "Registered source main did not resolve to a canonical commit SHA." >&2
+            exit 1
+          }
+          echo "main_gate_sha=$main_gate_sha" >> "$GITHUB_OUTPUT"
+          python scripts/external_source_factory.py --github-output "$GITHUB_OUTPUT" check-main-rebuild \
+            --plugin-id "$PLUGIN_ID" --source-root .xsec-factory-source-main
+      - name: Remove the isolated external source checkouts before signing
+        if: ${{ steps.request.outputs.external == 'true' }}
+        run: rm -rf -- .xsec-factory-source .xsec-factory-source-main
+      - name: Record immutable external Beta provenance after deterministic packaging
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'beta' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+          PUBLISHER: ${{ github.actor }}
+        run: python scripts/external_source_factory.py record-beta --plugin-id "$PLUGIN_ID" --source-sha "$SOURCE_SHA" --publisher "$PUBLISHER"
+      - name: Record Factory Beta state for Desktop status consumers
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'beta' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+          MAIN_GATE_SHA: ${{ steps.main-gate.outputs.main_gate_sha }}
+          STATUS_STATE: ${{ steps.main-gate.outputs.state }}
+          DELIVERY_ID: ${{ github.run_id }}.${{ github.run_attempt }}
+          FACTORY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python scripts/external_source_factory.py record-status --plugin-id "$PLUGIN_ID" \
+            --beta-sha "$SOURCE_SHA" --main-gate-sha "$MAIN_GATE_SHA" --state "$STATUS_STATE" --delivery-id "$DELIVERY_ID" \
+            --factory-run-url "$FACTORY_RUN_URL"
+      - name: Record terminal smoke-verified Factory state for Desktop status consumers
+        # This runs even when channels.stable already points at the selected
+        # release. A duplicate/late smoke callback must repair a prior
+        # waiting_for_smoke state, while complete-smoke-status keeps an
+        # already-published identical outcome idempotent.
+        if: ${{ steps.request.outputs.external == 'true' && steps.request.outputs.channel == 'stable' }}
+        env:
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+          RELEASE_ID: ""
+          DELIVERY_ID: ${{ github.run_id }}.${{ github.run_attempt }}
+          FACTORY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SMOKE_RUN_URL: ""
+          SMOKE_MARKETPLACE_REVISION: ""
+        run: |
+          set -euo pipefail
+          if [ -n "$SMOKE_RUN_URL" ]; then
+            python scripts/external_source_factory.py complete-smoke-status --plugin-id "$PLUGIN_ID" \
+              --beta-release-id "$RELEASE_ID" --stable-sha "$SOURCE_SHA" --delivery-id "$DELIVERY_ID" \
+              --smoke-run-url "$SMOKE_RUN_URL" --marketplace-revision "$SMOKE_MARKETPLACE_REVISION"
+          else
+            # The guarded manual recovery path remains observable but must
+            # never claim a verified Desktop smoke outcome.
+            python scripts/external_source_factory.py record-status --plugin-id "$PLUGIN_ID" \
+              --stable-sha "$SOURCE_SHA" --state promoting_stable --delivery-id "$DELIVERY_ID" \
+              --factory-run-url "$FACTORY_RUN_URL"
+          fi
+      - name: Skip a no-op Factory publication
+        id: publication-decision
+        env:
+          EXTERNAL: ${{ steps.request.outputs.external }}
+          CHANNEL: ${{ steps.request.outputs.channel }}
+          MAINTENANCE: ${{ steps.request.outputs.maintenance }}
+          STABLE_CHANGED: ${{ steps.external-stable.outputs.changed }}
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EXTERNAL" = "true" ] && [ "$CHANNEL" = "stable" ] && [ "$STABLE_CHANGED" != "true" ] \
+            && test -z "$(git status --porcelain --untracked-files=all -- .agents/plugins .xsec-factory)"; then
+            # A no-op must still prove the already-selected pointer has
+            # immutable Factory evidence, but it must leave no output to sign.
+            # In particular, a late smoke callback that turned the status
+            # terminal is a real, signed Factory update even when the Stable
+            # pointer was already selected.
+            python scripts/external_source_factory.py validate
+            git diff --exit-code
+            test -z "$(git status --porcelain --untracked-files=all)" || {
+              echo "An external Stable no-op left unexpected Factory changes." >&2
+              git status --short >&2
+              exit 1
+            }
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EXTERNAL" = "true" ] && [ "$CHANNEL" = "beta" ] && test -z "$(git status --porcelain --untracked-files=all -- .agents/plugins .xsec-factory)"; then
+            # A duplicate source delivery has neither changed immutable
+            # metadata nor UI state. It must not create a new sidecar/PR or
+            # bypass the validated-merge Desktop dispatcher; an operator can
+            # use the separately audited smoke recovery path if needed.
+            python scripts/external_source_factory.py validate
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          elif [ "$EXTERNAL" != "true" ]; then
+            if test -z "$(git status --porcelain --untracked-files=all -- .agents/plugins .xsec-factory)"; then
+              python scripts/external_source_factory.py validate
+              git diff --exit-code
+              test -z "$(git status --porcelain --untracked-files=all)" || {
+                echo "A built-in no-op left unexpected Factory changes." >&2
+                git status --short >&2
+                exit 1
+              }
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate source manifests, deterministic artifacts and package safety
+        if: ${{ steps.publication-decision.outputs.should_publish == 'true' }}
+        run: python scripts/validate_market.py source --source-root . --built-root .
+      - name: Validate official external Factory registry, snapshots and provenance
+        if: ${{ steps.publication-decision.outputs.should_publish == 'true' }}
+        run: >-
+          python scripts/external_source_factory.py validate
+          --allow-unsigned-publication-proofs
+          --allow-unsigned-active-release-sidecars
+      - name: Publish generated metadata through a protected pull request
+        id: publish
+        if: ${{ steps.publication-decision.outputs.should_publish == 'true' }}
+        env:
+          # The repository deliberately does not allow the default Actions
+          # token to create pull requests. This narrowly scoped fine-grained
+          # token is restricted to xsec-plugins and is the only credential
+          # permitted to push the generated branch, create its PR, and
+          # dispatch the immutable source gate. The workflow never merges a
+          # generated release PR: the finalizer does that only after the
+          # source gate completes.
+          GH_TOKEN: ${{ secrets.XSEC_MARKETPLACE_PUBLISH_TOKEN }}
+          EXTERNAL: ${{ steps.request.outputs.external }}
+          MAINTENANCE: ${{ steps.request.outputs.maintenance }}
+          COMMIT_TITLE: ${{ steps.request.outputs.commit_title }}
+          BRANCH_PREFIX: ${{ steps.request.outputs.branch_prefix }}
+        run: |
+          set -euo pipefail
+          # Stage Factory provenance and the already-indexed first-party Gitlink.
+          git add -A .agents/plugins .xsec-factory
+          if git diff --cached --quiet; then
+            echo "marketplace_revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "xsec-marketplace[bot]"
+          git config user.email "xsec-marketplace[bot]@users.noreply.github.com"
+          git commit -m "$COMMIT_TITLE"
+          generated_revision="$(git rev-parse HEAD)"
+          # A re-run retains GITHUB_RUN_ID but gets a new attempt number. Keep
+          # that number in the generated branch so an earlier, divergent
+          # publication attempt cannot make this push non-fast-forward.
+          branch="xsec-marketplace/${BRANCH_PREFIX}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git push --set-upstream origin "$branch"
+          if [ "$MAINTENANCE" = "true" ]; then
+            body="Generated by controlled workflow run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. The finalizer revalidates the exact default-set delta."
+          elif [ "$EXTERNAL" = "true" ]; then
+            body="Generated by protected workflow run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. It publishes one immutable plugin version and records Factory provenance. The source gate and finalizer remain required."
+          else
+            body="Generated by protected workflow run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. It appends immutable plugin versions and requires the source gate and finalizer."
+          fi
+          pull_url="$(gh pr create --base main --head "$branch" --title "$COMMIT_TITLE" --body "$body")"
+          pull_number="${pull_url##*/}"
+          [[ "$pull_number" =~ ^[1-9][0-9]*$ ]] || { echo "Generated Factory PR number is invalid." >&2; exit 1; }
+          {
+            echo "## Marketplace publication PR awaiting final validation"
+            echo
+            echo "${pull_url}"
+            echo
+            echo "The source gate and finalizer must validate this exact revision before merge."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "published=false" >> "$GITHUB_OUTPUT"
+          echo "pending_status_authentication=true" >> "$GITHUB_OUTPUT"
+      - name: Record an exact source-reconcile publication receipt
+        id: reconcile-receipt
+        if: ${{ steps.request.outputs.external == 'true' && inputs.reconcile_delivery_key != '' && inputs.reconcile_dispatch_nonce != '' }}
+        env:
+          DELIVERY_KEY: ${{ inputs.reconcile_delivery_key }}
+          DISPATCH_NONCE: ${{ inputs.reconcile_dispatch_nonce }}
+          PLUGIN_ID: ${{ steps.external-request.outputs.plugin_id }}
+          SOURCE_SHA: ${{ steps.external-request.outputs.source_sha }}
+          CHANNEL: ${{ steps.request.outputs.channel }}
+          SHOULD_PUBLISH: ${{ steps.publication-decision.outputs.should_publish }}
+          FACTORY_REVISION: ${{ steps.current-main.outputs.source_revision }}
+        run: |
+          set -euo pipefail
+          receipt_name="xsec-reconcile-receipt-$(printf '%s' "${DELIVERY_KEY}:${DISPATCH_NONCE}" | sha256sum | awk '{print $1}')"
+          mkdir -p .xsec-reconcile-receipt
+          jq -cn \
+            --arg delivery_key "$DELIVERY_KEY" \
+            --arg dispatch_nonce "$DISPATCH_NONCE" \
+            --arg plugin_id "$PLUGIN_ID" \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg channel "$CHANNEL" \
+            --arg factory_revision "$FACTORY_REVISION" \
+            --arg outcome "$(if [ "$SHOULD_PUBLISH" = "true" ]; then printf candidate; else printf no-op; fi)" \
+            '{schemaVersion:1,deliveryKey:$delivery_key,dispatchNonce:$dispatch_nonce,pluginId:$plugin_id,sourceSha:$source_sha,channel:$channel,factoryRevision:$factory_revision,outcome:$outcome}' \
+            > .xsec-reconcile-receipt/receipt.json
+          echo "name=$receipt_name" >> "$GITHUB_OUTPUT"
+      - name: Upload the exact source-reconcile publication receipt
+        if: ${{ steps.reconcile-receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.reconcile-receipt.outputs.name }}
+          path: .xsec-reconcile-receipt/receipt.json
+          if-no-files-found: error
+          retention-days: 1
