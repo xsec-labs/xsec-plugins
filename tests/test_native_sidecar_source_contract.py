@@ -121,6 +121,13 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
             native_sidecars.BINARY_ANALYSIS_RECIPE,
         )
 
+    def test_native_sidecar_contract_accepts_schema_versions_2_and_3_only(self) -> None:
+        permissions = {permission: {} for permission in native_sidecars.NATIVE_SIDECAR_PERMISSIONS}
+        for schema_version, expected in ((1, False), (2, True), (3, True), (4, False)):
+            manifest = {"extensions": {"com.xsec.desktop": {"schemaVersion": schema_version, "permissions": permissions}}}
+            with self.subTest(schema_version=schema_version):
+                self.assertIs(native_sidecars.declares_native_sidecar_contract(manifest), expected)
+
     def test_native_contract_rejects_a_legacy_node_mcp_declaration(self) -> None:
         recipe = native_sidecars.ATTACK_PATH_RECIPE
         servers = {"attack-path": {"type": "stdio", "command": "node", "args": ["sidecar.js"], "cwd": "${PLUGIN_DATA}"}}

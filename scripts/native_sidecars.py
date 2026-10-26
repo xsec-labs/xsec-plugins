@@ -872,7 +872,7 @@ def source_declares_native_sidecar_contract(source_dir: Path, plugin_id: str) ->
 
 
 def declares_native_sidecar_contract(manifest: object) -> bool:
-    """Require both the v2 host schema and its explicit native authorities."""
+    """Require the v2 or v3 host schema and its explicit native authorities."""
 
     if not isinstance(manifest, dict):
         return False
@@ -881,7 +881,7 @@ def declares_native_sidecar_contract(manifest: object) -> bool:
     permissions = desktop.get("permissions") if isinstance(desktop, dict) else None
     return (
         isinstance(desktop, dict)
-        and desktop.get("schemaVersion") == 2
+        and desktop.get("schemaVersion") in (2, 3)
         and isinstance(permissions, dict)
         and NATIVE_SIDECAR_PERMISSIONS.issubset(permissions)
     )

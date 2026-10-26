@@ -833,6 +833,42 @@ class ExternalSourceFactoryTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, message):
                         build_market.portable_target_filesystem_path(relative)
 
+    def rewrite_desktop_extension(self, source: Path, **changes: object) -> None:
+        manifest = json.loads((source / "package" / "plugin.json").read_text(encoding="utf-8"))
+        manifest["extensions"]["com.xsec.desktop"].update(changes)
+        write_json(source / "package" / "plugin.json", manifest)
+
+    def test_native_entrypoint_is_a_builtin_module_not_a_source_path(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-external-native-entrypoint-") as directory:
+            root = Path(directory)
+            source = self.make_source(root / "source")
+            self.make_factory(root, self.registry_entry())
+            self.rewrite_desktop_extension(
+                source,
+                schemaVersion=3,
+                entrypoints={"frontend": "frontend.js", "native": f"builtin:{PLUGIN_ID}"},
+            )
+            factory.stage_beta(root, PLUGIN_ID, source)
+
+    def test_native_entrypoint_rejects_other_plugins_and_older_schemas(self) -> None:
+        cases = (
+            ("another plugin", 3, "builtin:com.example.other", "must be builtin:com.example.external"),
+            ("a source path", 3, "./native/lib.so", "must be builtin:com.example.external"),
+            ("schemaVersion 2", 2, f"builtin:{PLUGIN_ID}", "requires schemaVersion 3"),
+            ("no schemaVersion", None, f"builtin:{PLUGIN_ID}", "requires schemaVersion 3"),
+        )
+        for label, schema_version, native, message in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory(prefix="xsec-external-native-entrypoint-") as directory:
+                root = Path(directory)
+                source = self.make_source(root / "source")
+                self.make_factory(root, self.registry_entry())
+                changes: dict[str, object] = {"entrypoints": {"frontend": "frontend.js", "native": native}}
+                if schema_version is not None:
+                    changes["schemaVersion"] = schema_version
+                self.rewrite_desktop_extension(source, **changes)
+                with self.assertRaisesRegex(factory.ExternalSourceFactoryError, message):
+                    factory.stage_beta(root, PLUGIN_ID, source)
+
     def test_external_source_is_bounded_before_snapshot_or_packaging(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-external-bounded-source-") as directory:
             root = Path(directory)

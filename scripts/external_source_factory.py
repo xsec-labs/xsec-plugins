@@ -1051,6 +1051,14 @@ def source_manifest(source_dir: Path, registration: Registration) -> dict[str, o
     for name, raw_path in entrypoints.items():
         if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name):
             fail("external plugin manifest has an invalid XSEC Desktop entrypoint name")
+        if name == "native":
+            # A compiled-in host module, not a source path: schemaVersion 3
+            # only, and only the plugin's own builtin:<id>.
+            if desktop.get("schemaVersion") != 3:
+                fail("external plugin entrypoint native requires schemaVersion 3")
+            if raw_path != f"builtin:{registration.plugin_id}":
+                fail(f"external plugin entrypoint native must be builtin:{registration.plugin_id}")
+            continue
         relative = safe_source_path(raw_path, f"external plugin entrypoint {name}")
         if any(part in SNAPSHOT_EXCLUDED_NAMES for part in relative.parts):
             fail(f"external plugin entrypoint {name} cannot point into excluded source content")

@@ -2144,6 +2144,48 @@ export function renderPlaceholder() {}
                     with self.assertRaisesRegex(MarketplaceValidationError, "symbolic links"):
                         validate_source_manifest("com.xsec.test", plugin_dir)
 
+    def test_native_entrypoint_is_a_builtin_module_declared_by_schema_version_3(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-market-native-entrypoint-") as directory:
+            plugin_dir = Path(directory) / "com.xsec.test"
+            entrypoint = plugin_dir / "com.xsec.desktop" / "frontend" / "index.js"
+            entrypoint.parent.mkdir(parents=True)
+            entrypoint.write_text("export {};\n", encoding="utf-8")
+
+            def manifest(schema_version: int, native: str) -> dict[str, object]:
+                return {
+                    "name": "com.xsec.test",
+                    "version": "1.0.0",
+                    "extensions": {
+                        "com.xsec.desktop": {
+                            "schemaVersion": schema_version,
+                            "engines": {"xsec": ">=1", "pluginApi": "^1"},
+                            "entrypoints": {
+                                "frontend": "./com.xsec.desktop/frontend/index.js",
+                                "native": native,
+                            },
+                        },
+                    },
+                }
+
+            (plugin_dir / "plugin.json").write_text(json.dumps(manifest(3, "builtin:com.xsec.test")), encoding="utf-8")
+            validate_source_manifest("com.xsec.test", plugin_dir)
+
+            artifact = Path(directory) / "native.xsec-plugin"
+            with zipfile.ZipFile(artifact, "w") as archive:
+                archive.writestr("plugin.json", json.dumps(manifest(3, "builtin:com.xsec.test")))
+                archive.writestr("com.xsec.desktop/frontend/index.js", "export {};\n")
+            validate_archive(artifact, "com.xsec.test", "1.0.0")
+
+            for label, document, message in (
+                ("another plugin", manifest(3, "builtin:com.xsec.other"), "native must be builtin:com.xsec.test"),
+                ("a source path", manifest(3, "./native/lib.so"), "native must be builtin:com.xsec.test"),
+                ("schemaVersion 2", manifest(2, "builtin:com.xsec.test"), "native requires schemaVersion 3"),
+            ):
+                with self.subTest(label):
+                    (plugin_dir / "plugin.json").write_text(json.dumps(document), encoding="utf-8")
+                    with self.assertRaisesRegex(MarketplaceValidationError, message):
+                        validate_source_manifest("com.xsec.test", plugin_dir)
+
     def test_archive_entrypoints_must_be_packed_regular_files(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-market-archive-entrypoint-") as directory:
             manifest = json.dumps({
