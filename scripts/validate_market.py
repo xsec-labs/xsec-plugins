@@ -297,6 +297,14 @@ def desktop_entrypoints(manifest: dict[str, object], label: str) -> list[tuple[s
     for name, value in entrypoints.items():
         if not isinstance(name, str) or not ENTRYPOINT_NAME.fullmatch(name):
             fail(f"{label} has an invalid XSEC Desktop entrypoint name")
+        if name == "native":
+            # A compiled-in host module, not a package path: schemaVersion 3
+            # only, and only the plugin's own builtin:<id>.
+            if desktop.get("schemaVersion") != 3:
+                fail(f"{label} entrypoint native requires schemaVersion 3")
+            if value != f"builtin:{manifest.get('name')}":
+                fail(f"{label} entrypoint native must be builtin:{manifest.get('name')}")
+            continue
         relative = safe_relative_path(value, f"{label} entrypoint {name}")
         result.append((name, relative))
     return result
@@ -3546,8 +3554,8 @@ def validate_native_source(plugin_id: str, plugin_dir: Path, manifest: dict[str,
     if recipe is None:
         return False
     desktop = manifest.get("extensions", {}).get("com.xsec.desktop")
-    if not isinstance(desktop, dict) or desktop.get("schemaVersion") != 2:
-        fail(f"plugin manifest {plugin_id} native MCP requires schemaVersion 2")
+    if not isinstance(desktop, dict) or desktop.get("schemaVersion") not in (2, 3):
+        fail(f"plugin manifest {plugin_id} native MCP requires schemaVersion 2 or 3")
     agent_tools = desktop.get("contributes", {}).get("agentTools")
     if not isinstance(agent_tools, dict) or not agent_tools:
         fail(f"plugin manifest {plugin_id} native MCP requires agentTool bindings")
