@@ -1,9 +1,11 @@
 # Source initialization
 
 The Factory source is maintained under `xsec-labs/xsec-plugins`. The registry
-contains twelve first-party packages and the external `io.xsec.project-files`
-package. The root package marker and submodule Gitlinks identify the new source
-repositories and their initial immutable revisions.
+contains the twelve first-party packages. The external `io.xsec.project-files`
+package was never published and has been withdrawn from the allowlist (the Go
+desktop does not provide a native view for it). The root package marker and
+submodule Gitlinks identify the new source repositories and their initial
+immutable revisions.
 
 The initial marketplace index has an empty `plugins` list. Each package must
 complete source materialization, adoption, artifact construction, provenance,
