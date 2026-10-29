@@ -61,6 +61,7 @@ users still confirm the plugin's permissions when they install it.
      -f source_sha=<40-character lowercase commit SHA on the registered branch>
    ```
 
+   Running it needs permission to trigger workflows in `xsec-labs/xsec-plugins`.
    Native MCP sidecars additionally need `-f native_sidecars_source_sha=<xSecDesktop main SHA>`.
    Follow the generated Factory PR through the finalizer as described in
    [Development and publication](docs/plugin-development-release-lifecycle.md).
