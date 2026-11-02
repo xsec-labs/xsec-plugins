@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,6 +10,13 @@ import { fileURLToPath } from "node:url";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "python" : "python3");
 const snapshotPath = (pluginId) => join(root, ".xsec-factory", "snapshots", pluginId);
+// Same gate as the Python suite: these checks need retained package snapshots, which exist only after publication.
+const snapshotRoot = join(root, ".xsec-factory", "snapshots");
+const publicationStarted =
+  existsSync(snapshotRoot) && readdirSync(snapshotRoot, { withFileTypes: true }).some((entry) => entry.isDirectory());
+const awaitingPublication = publicationStarted
+  ? false
+  : "awaiting first protected publication: no package snapshots are retained";
 
 async function loadFrontend(pluginId) {
   const path = join(snapshotPath(pluginId), "com.xsec.desktop", "frontend", "index.js");
@@ -21,7 +29,7 @@ async function manifest(pluginId) {
   return JSON.parse(await readFile(join(snapshotPath(pluginId), "plugin.json"), "utf8"));
 }
 
-test("attack-path frontend exposes the reviewed attack-path and subagent contract", async () => {
+test("attack-path frontend exposes the reviewed attack-path and subagent contract", { skip: awaitingPublication }, async () => {
   const { module, source } = await loadFrontend("com.xsec.attack-path");
   const attackPath = await manifest("com.xsec.attack-path");
   const methods = attackPath.extensions["com.xsec.desktop"].frontendApi.methods;
@@ -44,7 +52,7 @@ test("attack-path frontend exposes the reviewed attack-path and subagent contrac
   assert.doesNotMatch(source, /compatibility bridge|兼容渲染器/);
 });
 
-test("subagent frontend owns observer ordering and duration formatting", async () => {
+test("subagent frontend owns observer ordering and duration formatting", { skip: awaitingPublication }, async () => {
   const { module, source } = await loadFrontend("com.xsec.workspace.sub-agent");
   const sorted = module.sortObservers([
     { id: "done", status: "done", updated_at: 3 },
@@ -60,7 +68,7 @@ test("subagent frontend owns observer ordering and duration formatting", async (
   assert.doesNotMatch(source, /compatibility bridge|兼容渲染器/);
 });
 
-test("retained manifests express the attack-path to subagent plugin relationship", async () => {
+test("retained manifests express the attack-path to subagent plugin relationship", { skip: awaitingPublication }, async () => {
   const attackPath = await manifest("com.xsec.attack-path");
   const subagent = await manifest("com.xsec.workspace.sub-agent");
   const attackExtension = attackPath.extensions["com.xsec.desktop"];
@@ -79,7 +87,7 @@ test("retained manifests express the attack-path to subagent plugin relationship
   assert.equal(subagentExtension.contributes.workspaceTools["subagent-detail"].launchable, false);
 });
 
-test("marketplace bootstrap preserves every package-owned frontend", async () => {
+test("marketplace bootstrap preserves every package-owned frontend", { skip: awaitingPublication }, async () => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "xsec-plugin-bootstrap-"));
   try {
     const marketplaceRoot = join(temporaryRoot, "marketplace");
