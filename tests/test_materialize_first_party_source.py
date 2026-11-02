@@ -20,6 +20,7 @@ sys.path.insert(0, str(SCRIPTS))
 import build_market  # noqa: E402
 import materialize_first_party_source as materializer  # noqa: E402
 import native_sidecars  # noqa: E402
+from publication_gate import requires_publication
 
 
 PLUGIN_ID = "com.xsec.workspace.sub-agent"
@@ -211,6 +212,7 @@ class FirstPartySourceMaterializerTests(unittest.TestCase):
             self.assertEqual(result["pendingAdoptionRegistry"]["source"]["repository"], "xsec-labs/xsec-plugin-sub-agent")
             self.assertRegex(result["sourceCommits"]["stable"], r"^[a-f0-9]{40}$")
 
+    @requires_publication
     def test_native_release_materializes_a_verified_binary_free_source_projection(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-materializer-native-") as directory:
             root = Path(directory)
@@ -236,6 +238,7 @@ class FirstPartySourceMaterializerTests(unittest.TestCase):
             self.assertTrue((source_plugin / "plugin.json").is_file())
             self.assertFalse((source_plugin / native_sidecars.ATTACK_PATH_RECIPE.archive_path).exists())
 
+    @requires_publication
     def test_native_materialization_rejects_platform_archives_with_different_source_content(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-materializer-native-drift-") as directory:
             root = Path(directory)
@@ -346,7 +349,26 @@ class FirstPartySourceMaterializerTests(unittest.TestCase):
 
     def test_push_target_is_closed_to_the_exact_first_party_mapping(self) -> None:
         expected = "https://github.com/xsec-labs/xsec-plugin-sub-agent.git"
-        self.assertEqual(len(materializer.FIRST_PARTY_APPROVED_SOURCES), 12)
+        # Twelve active first-party packages plus the retired, disabled project-workspace record.
+        self.assertEqual(len(materializer.FIRST_PARTY_APPROVED_SOURCES), 13)
+        self.assertEqual(
+            set(materializer.FIRST_PARTY_APPROVED_SOURCES),
+            {
+                "com.xsec.asset-discovery",
+                "com.xsec.attack-path",
+                "com.xsec.binary-analysis",
+                "com.xsec.jwt-analysis",
+                "com.xsec.project-workspace",
+                "com.xsec.system-terminal",
+                "com.xsec.workspace.approvals",
+                "com.xsec.workspace.browser",
+                "com.xsec.workspace.conversation-tree",
+                "com.xsec.workspace.files",
+                "com.xsec.workspace.project-outcomes",
+                "com.xsec.workspace.sub-agent",
+                "com.xsec.workspace.traffic",
+            },
+        )
         self.assertEqual(
             materializer.FIRST_PARTY_APPROVED_SOURCES["com.xsec.binary-analysis"],
             "xsec-labs/xsec-plugin-binary-analysis",

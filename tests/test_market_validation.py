@@ -21,6 +21,7 @@ import build_market  # noqa: E402
 import marketplace_contract  # noqa: E402
 import promote_release  # noqa: E402
 import validate_market  # noqa: E402
+from publication_gate import requires_publication
 from validate_market import (  # noqa: E402
     MarketplaceValidationError,
     validate_archive,
@@ -408,6 +409,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "plugin API 1.4"):
             validate_market.validate_official_frontend(manifest, source, "Traffic 1.3.0")
 
+    @requires_publication
     def test_browser_surface_methods_require_plugin_api_1_4(self) -> None:
         """Require Plugin API 1.4 for Browser Surface control methods."""
 
@@ -443,8 +445,9 @@ class MarketplaceValidationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="xsec-market-source-test-") as directory:
             output = Path(directory) / "marketplace"
             self.build_marketplace(output)
-            validate_source(ROOT, output, allow_pending_native_sources=True)
+            validate_source(ROOT, output, allow_pending_native_sources=True, allow_pending_publication=True)
 
+    @requires_publication
     def test_source_gate_preserves_active_discovery_and_default_set_in_disposable_output(self) -> None:
         """The temporary output retains active entries and their default policy."""
 
@@ -453,7 +456,6 @@ class MarketplaceValidationTests(unittest.TestCase):
         expected_entries = {
             entry["pluginId"] for entry in registry["plugins"]
             if entry["status"] == "active"
-            and (snapshot_dir(ROOT, entry["pluginId"]) / "plugin.json").is_file()
         }
         with tempfile.TemporaryDirectory(prefix="xsec-market-active-default-set-") as directory:
             output = Path(directory) / "marketplace"
@@ -472,6 +474,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                 expected_defaults,
             )
 
+    @requires_publication
     def test_official_plugin_settings_pages_and_plugin_bound_rpcs_are_declared(self) -> None:
         """The six reviewed settings surfaces remain field-renderable packages."""
 
@@ -501,6 +504,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                     descriptor = manifest["extensions"]["com.xsec.desktop"]["frontendApi"]["methods"][method]
                     self.assertEqual(descriptor, {"capability": capability, "binding": binding})
 
+    @requires_publication
     def test_official_plugin_settings_rejects_session_bound_read(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         manifest = json.loads((snapshot_dir(ROOT, plugin_id) / "plugin.json").read_text(encoding="utf-8"))
@@ -508,6 +512,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "canonical plugin settings permission"):
             validate_market.validate_official_settings_contract(manifest, plugin_id)
 
+    @requires_publication
     def test_official_plugin_settings_rejects_missing_settings_activation(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         manifest = json.loads((snapshot_dir(ROOT, plugin_id) / "plugin.json").read_text(encoding="utf-8"))
@@ -524,6 +529,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             },
         )
 
+    @requires_publication
     def test_terminal_settings_navigation_is_validated_when_declared(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         manifest = json.loads((snapshot_dir(ROOT, plugin_id) / "plugin.json").read_text(encoding="utf-8"))
@@ -532,6 +538,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "canonical plugin settings permission"):
             validate_market.validate_official_settings_contract(manifest, plugin_id)
 
+    @requires_publication
     def test_terminal_settings_navigation_rejects_null_descriptor(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         manifest = json.loads((snapshot_dir(ROOT, plugin_id) / "plugin.json").read_text(encoding="utf-8"))
@@ -539,6 +546,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "canonical plugin settings permission"):
             validate_market.validate_official_settings_contract(manifest, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -565,6 +573,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         self.assertEqual(rpc.start(), rpc_offset)
         self.assertIn(rpc_decoy, replace_source_match(source, rpc, "undefined"))
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_template_literal_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -575,6 +584,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "calls undeclared host RPC methods"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_constant_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -588,6 +598,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "calls undeclared host RPC methods"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
     def test_official_frontend_ignores_host_request_examples_outside_code(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -632,6 +643,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         self.assertIn("/}/", regexes)
         self.assertEqual(strings.count("path/segment"), 2)
 
+    @requires_publication
     def test_official_frontend_rejects_unresolved_host_request_argument(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -641,6 +653,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_partially_dynamic_rpc_map(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -654,6 +667,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_partially_dynamic_rpc_constant(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -667,6 +681,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_optional_and_bracket_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -692,6 +707,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         tokens = validate_market.javascript_contract_tokens(source, "frontend")
         self.assertIn(("regex", '/host.request("xsec.example")/'), tokens)
 
+    @requires_publication
     def test_official_frontend_rejects_parenthesized_and_continued_rpc_arguments(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -706,6 +722,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
                     validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_excludes_unreachable_function_rpc_evidence(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -736,6 +753,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         self.assertEqual(regexes, ['/host.request("xsec.plugin.settings.open")/'])
         self.assertEqual(requested, {"xsec.example"})
 
+    @requires_publication
     def test_official_frontend_rejects_regex_text_as_declared_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -755,6 +773,7 @@ class MarketplaceValidationTests(unittest.TestCase):
 
         self.assertEqual(len(slashes), divisions)
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_request_after_template_interpolation(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -786,6 +805,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         self.assertEqual(regexes, ['/host.request("xsec.plugin.settings.open")/'])
         self.assertEqual(requested, {"xsec.example"})
 
+    @requires_publication
     def test_official_frontend_rejects_block_regex_as_declared_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -800,6 +820,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "does not reference declared RPC methods"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_shadowed_rpc_constant(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -827,6 +848,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         self.assertEqual(regexes, ['/host.request("xsec.example")/'])
         self.assertEqual(requested, {"xsec.plugin.settings.open"})
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_request_after_identifier_name(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -844,6 +866,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(MarketplaceValidationError, "calls undeclared host RPC methods"):
                     validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_request_after_catch_method(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -857,6 +880,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "calls undeclared host RPC methods"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_continued_literal_rpc_argument(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -870,6 +894,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_comma_host_receiver(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -882,6 +907,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_constructor_and_object_method_shadowed_rpc_constant(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -905,6 +931,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             validate_market.frontend_host_requests(tokens, "frontend")
         self.assertEqual(regexes, ['/host.request("xsec.plugin.settings.open")/'])
 
+    @requires_publication
     def test_official_frontend_rejects_labeled_break_asi_regex_as_declared_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -935,6 +962,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
                     validate_market.frontend_host_requests(tokens, "frontend")
 
+    @requires_publication
     def test_official_frontend_rejects_host_alias_and_unscoped_rpc_constant(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -950,6 +978,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             )
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_excludes_uncalled_nested_rpc_and_requires_actual_requests(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1033,6 +1062,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         tokens = validate_market.javascript_contract_tokens(source, "frontend")
         self.assertEqual(validate_market.frontend_host_requests(tokens, "frontend"), {"xsec.good"})
 
+    @requires_publication
     def test_official_frontend_rejects_continued_identifier_rpc_argument(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1048,6 +1078,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
                     validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_untracked_helper_host_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1075,6 +1106,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             {"xsec.plugin.settings.open"},
         )
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_request_inside_interpolation_object(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1088,6 +1120,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "calls undeclared host RPC methods"):
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_ternary_parenthesized_host_receiver(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1102,6 +1135,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "unresolved receiver"):
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_alias_optional_and_bracket_request(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1117,6 +1151,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(MarketplaceValidationError, "unresolved receiver"):
                     validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_excludes_object_property_key_as_callback(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1132,6 +1167,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "does not reference declared RPC methods"):
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_later_const_binding_for_request_argument(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1144,6 +1180,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "unresolved host RPC request argument"):
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_rejects_rpc_map_union_from_unrelated_property(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1159,6 +1196,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "does not reference declared RPC methods"):
             validate_market.validate_official_frontend(manifest, mutated, plugin_id)
 
+    @requires_publication
     def test_official_frontend_excludes_short_circuit_and_unselected_ternary_requests(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1191,6 +1229,7 @@ class MarketplaceValidationTests(unittest.TestCase):
                     {"xsec.plugin.settings.open"},
                 )
 
+    @requires_publication
     def test_official_frontend_rejects_undeclared_request_after_interpolation_function(self) -> None:
         plugin_id = "com.xsec.system-terminal"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1264,6 +1303,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         slashes = [value for kind, value in tokens if kind == "punctuation" and value == "/"]
         self.assertEqual(len(slashes), divisions)
 
+    @requires_publication
     def test_terminal_profile_controls_are_limited_to_the_settings_page_branch(self) -> None:
         source = (
             snapshot_dir(ROOT, "com.xsec.system-terminal") / "com.xsec.desktop" / "frontend" / "index.js"
@@ -1290,6 +1330,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, main_source)
 
+    @requires_publication
     def test_settings_read_failures_do_not_discard_workspace_data_or_clear_the_notice(self) -> None:
         """Auxiliary plugin settings reads must not hide the useful failure state."""
 
@@ -1527,6 +1568,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(promote_release.PromotionError, "target is not an existing immutable release"):
                 promote_release.promote_stable(root, "com.example.test", "sha256-" + "a" * 64)
 
+    @requires_publication
     def test_source_gate_rejects_tampered_generated_artifact(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-market-tampered-artifact-") as directory:
             output = Path(directory) / "marketplace"
@@ -1537,6 +1579,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(MarketplaceValidationError, "SHA-256"):
                 validate_source(ROOT, output, allow_pending_native_sources=True)
 
+    @requires_publication
     def test_approvals_frontend_v2_contract_survives_the_generated_archive(self) -> None:
         plugin_id = "com.xsec.workspace.approvals"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1585,6 +1628,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             self.assertNotIn(placeholder, source, plugin_id)
             self.assertIn("export function activate(host)", source, plugin_id)
 
+    @requires_publication
     def test_generic_official_frontend_gate_rejects_success_screen_stub(self) -> None:
         """Reject an inert success screen in place of an official frontend."""
 
@@ -1595,6 +1639,7 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "placeholder/fallback marker"):
             validate_market.validate_official_frontend(manifest, stub, "files stub")
 
+    @requires_publication
     def test_approvals_frontend_rejects_any_noncanonical_reviewed_structure(self) -> None:
         plugin_id = "com.xsec.workspace.approvals"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -1610,6 +1655,7 @@ class MarketplaceValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(MarketplaceValidationError, "approved official approvals frontend structure"):
                 validate_archive(artifact, plugin_id, manifest["version"])
 
+    @requires_publication
     def test_approvals_frontend_contract_rejects_placeholder_archive(self) -> None:
         plugin_id = "com.xsec.workspace.approvals"
         plugin_dir = snapshot_dir(ROOT, plugin_id)
@@ -2309,8 +2355,10 @@ export function renderPlaceholder() {}
         self.assertIn("repository: xsec-labs/xSecDesktop", sidecar_job)
         self.assertIn("ref: ${{ inputs.native_sidecars_source_sha }}", sidecar_job)
         self.assertIn("repos/xsec-labs/xSecDesktop/commits/main", sidecar_job)
-        self.assertIn("--package xsec-attack-path-mcp", sidecar_job)
-        self.assertIn("--package xsec-asset-discovery-mcp", sidecar_job)
+        self.assertIn("go build -trimpath -o", sidecar_job)
+        self.assertIn("CGO_ENABLED=0", sidecar_job)
+        self.assertIn("./cmd/attack-path-mcp", sidecar_job)
+        self.assertIn("./cmd/asset-discovery-mcp", sidecar_job)
         self.assertIn("xsec-native-sidecars-${{ matrix.rust_target }}", sidecar_job)
         self.assertIn('for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis', steps)
         self.assertIn('$native_plugin@$target=$binary', steps)

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from marketplace_contract import OFFICIAL_PLUGIN_IDS  # noqa: E402
+from publication_gate import requires_publication
 
 
 PROJECT_WORKSPACE_PLUGIN_ID = "com.xsec.project-workspace"
@@ -43,6 +44,7 @@ class BootstrapPluginsTests(unittest.TestCase):
         shutil.copytree(retained_snapshot, factory_root / "snapshots" / PROJECT_WORKSPACE_PLUGIN_ID)
         return source_root
 
+    @requires_publication
     def test_bootstrap_uses_active_registry_defaults_and_retains_disabled_snapshot(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-bootstrap-defaults-") as directory:
             root = Path(directory)

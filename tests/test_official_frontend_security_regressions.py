@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_market  # noqa: E402
 import validate_market  # noqa: E402
 from validate_market import MarketplaceValidationError  # noqa: E402
+from publication_gate import requires_publication
 
 
 PLUGIN_ID = "com.xsec.system-terminal"
@@ -111,6 +112,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
 
         self.assertEqual(validate_market.javascript_line_terminator("x\r\ny", 0), (1, 2))
 
+    @requires_publication
     def test_unicode_line_separators_end_single_line_comments(self) -> None:
         """Treat both Unicode line separators as JavaScript comment endings."""
 
@@ -126,6 +128,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
                         manifest, inject_activation(source, payload), PLUGIN_ID
                     )
 
+    @requires_publication
     def test_escaped_request_spellings_cannot_hide_broker_calls(self) -> None:
         """Reject broker calls hidden behind escaped request spellings."""
 
@@ -142,6 +145,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
                         manifest, inject_activation(source, payload), PLUGIN_ID
                     )
 
+    @requires_publication
     def test_uncalled_activation_closures_do_not_prove_required_rpcs(self) -> None:
         """Require the fixture RPC to remain reachable from activation."""
 
@@ -167,6 +171,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
                         manifest, inject_activation(source, decoy), PLUGIN_ID
                     )
 
+    @requires_publication
     def test_activation_host_reassignment_invalidates_broker_proof(self) -> None:
         """Reject activation code that reassigns the trusted host binding."""
 
@@ -177,6 +182,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
                 manifest, inject_activation(source, payload), PLUGIN_ID
             )
 
+    @requires_publication
     def test_comment_text_cannot_supply_activation_or_lifecycle_contracts(self) -> None:
         """Ignore activation and lifecycle terms contained only in comments."""
 
@@ -194,6 +200,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "executable activate"):
             validate_market.validate_official_frontend(manifest, source, PLUGIN_ID)
 
+    @requires_publication
     def test_dynamic_javascript_evaluators_are_rejected(self) -> None:
         """Reject dynamic evaluators that could conceal broker calls."""
 
@@ -209,6 +216,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
                         manifest, inject_activation(source, payload), PLUGIN_ID
                     )
 
+    @requires_publication
     def test_dynamic_host_member_cannot_hide_request(self) -> None:
         """Reject computed host members that could conceal request calls."""
 
@@ -222,6 +230,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
                 manifest, inject_activation(source, payload), PLUGIN_ID
             )
 
+    @requires_publication
     def test_host_request_destructuring_cannot_hide_alias_calls(self) -> None:
         """Reject destructured request aliases with unresolved methods."""
 
@@ -239,6 +248,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
                         manifest, inject_activation(source, payload), PLUGIN_ID
                     )
 
+    @requires_publication
     def test_shadowed_controller_helper_cannot_supply_lifecycle_contract(self) -> None:
         """Reject lifecycle evidence supplied by a shadowed controller helper."""
 
@@ -253,6 +263,7 @@ class OfficialFrontendSecurityRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "executable mount/update/dispose"):
             validate_market.validate_official_frontend(manifest, mutated, PLUGIN_ID)
 
+    @requires_publication
     def test_reviewed_event_callbacks_and_lifecycle_remain_valid(self) -> None:
         """Accept the published frontend callback and lifecycle contract."""
 

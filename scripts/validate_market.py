@@ -3146,9 +3146,16 @@ def validate_archive(
     return manifest
 
 
+def no_published_packages(root: Path) -> bool:
+    snapshot_root = root / SNAPSHOT_ROOT_RELATIVE_PATH
+    return not snapshot_root.is_dir() or not any(entry.is_dir() for entry in snapshot_root.iterdir())
+
+
 def marketplace_entries(
     root: Path,
     expected_default_ids: set[str],
+    *,
+    pending_publication: bool = False,
 ) -> list[tuple[str, Path, dict[str, object]]]:
     marketplace_path = root / MARKETPLACE_RELATIVE_PATH
     if is_link(marketplace_path):
@@ -3189,7 +3196,10 @@ def marketplace_entries(
                 fail(f"default marketplace plugin {plugin_id} must authenticate on install")
             default_ids.add(plugin_id)
         result.append((plugin_id, plugin_dir, entry))
-    if default_ids != expected_default_ids:
+    # Before the first protected publication the index is empty by design and no
+    # snapshot is retained. Accept exactly that state, and nothing partly published.
+    accepted_pending = pending_publication and not result and no_published_packages(root)
+    if default_ids != expected_default_ids and not accepted_pending:
         missing = sorted(expected_default_ids - default_ids)
         unexpected = sorted(default_ids - expected_default_ids)
         fail(f"default official plugin set mismatch (missing={missing}, unexpected={unexpected})")
@@ -3581,13 +3591,19 @@ def validate_native_source(plugin_id: str, plugin_dir: Path, manifest: dict[str,
     return True
 
 
-def validate_source(source_root: Path, built_root: Path, *, allow_pending_native_sources: bool = False) -> None:
+def validate_source(
+    source_root: Path,
+    built_root: Path,
+    *,
+    allow_pending_native_sources: bool = False,
+    allow_pending_publication: bool = False,
+) -> None:
     try:
         expected_default_ids = set(active_default_official_plugin_ids(source_root))
     except ValueError as error:
         fail(str(error))
-    source_entries = marketplace_entries(source_root, expected_default_ids)
-    built_entries = marketplace_entries(built_root, expected_default_ids)
+    source_entries = marketplace_entries(source_root, expected_default_ids, pending_publication=allow_pending_publication)
+    built_entries = marketplace_entries(built_root, expected_default_ids, pending_publication=allow_pending_publication)
     if (source_root / MARKETPLACE_RELATIVE_PATH).read_bytes() != (built_root / MARKETPLACE_RELATIVE_PATH).read_bytes():
         fail("temporary marketplace metadata differs from source metadata")
     built_by_id = {plugin_id: plugin_dir for plugin_id, plugin_dir, _ in built_entries}
@@ -3668,12 +3684,18 @@ def main() -> None:
         action="store_true",
         help="accept v2 native-MCP source whose artifacts await protected-runner inputs",
     )
+    source_parser.add_argument(
+        "--allow-pending-publication",
+        action="store_true",
+        help="accept an empty marketplace index while no package snapshot is retained (before the first publication)",
+    )
     args = parser.parse_args()
     try:
         validate_source(
             args.source_root.resolve(),
             args.built_root.resolve(),
             allow_pending_native_sources=args.allow_pending_native_sources,
+            allow_pending_publication=args.allow_pending_publication,
         )
     except MarketplaceValidationError as error:
         raise SystemExit(f"marketplace validation failed: {error}") from error
