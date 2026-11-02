@@ -17,6 +17,7 @@ import build_market  # noqa: E402
 import external_source_factory as factory  # noqa: E402
 import native_sidecars  # noqa: E402
 import validate_market  # noqa: E402
+from publication_gate import requires_submodule
 
 
 PLUGIN_ID = "com.xsec.attack-path"
@@ -217,6 +218,7 @@ class NativeSidecarFactoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "approved radare2 source"):
             native_sidecars.validate_binary_engine_license_inventory(inventory)
 
+    @requires_submodule("com.xsec.binary-analysis")
     def test_binary_analysis_release_sbom_contains_validated_runtime_components(self) -> None:
         source_path = ROOT / "plugins" / "com.xsec.binary-analysis" / "SBOM.spdx.json"
         source = json.loads(source_path.read_text(encoding="utf-8"))

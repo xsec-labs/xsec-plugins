@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import prepare_development as development
 from native_sidecars import RECIPES, sha256_file
+from publication_gate import requires_publication
 
 
 class DevelopmentPreparationTests(unittest.TestCase):
@@ -32,11 +33,13 @@ class DevelopmentPreparationTests(unittest.TestCase):
     def destination(self) -> Path:
         return next(iter(development.source_plan(self.factory).values()))
 
+    @requires_publication
     def test_real_source_contract_accepts_missing_generated_entrypoints(self) -> None:
         plan = development.source_plan(self.factory)
         self.assertEqual(set(plan), set(RECIPES))
         self.assertTrue(all(not path.exists() for path in plan.values()))
 
+    @requires_publication
     def test_install_copies_executable_and_preserves_git_excludes(self) -> None:
         destination = self.destination()
         source = destination.parent.parent
@@ -55,6 +58,7 @@ class DevelopmentPreparationTests(unittest.TestCase):
         pattern = f"/{destination.relative_to(source).as_posix()}"
         self.assertEqual(exclude.read_text(encoding="utf-8").splitlines().count(pattern), 1)
 
+    @requires_publication
     def test_symlink_directory_is_rejected_before_writing(self) -> None:
         destination = self.destination()
         external = self.root / "outside"
@@ -64,6 +68,7 @@ class DevelopmentPreparationTests(unittest.TestCase):
             development.source_plan(self.factory)
         self.assertEqual(list(external.iterdir()), [])
 
+    @requires_publication
     def test_symlink_binary_is_rejected_before_replacement(self) -> None:
         destination = self.destination()
         destination.parent.mkdir()
@@ -75,6 +80,7 @@ class DevelopmentPreparationTests(unittest.TestCase):
         self.assertTrue(destination.is_symlink())
         self.assertEqual(sha256_file(binary), before)
 
+    @requires_publication
     def test_tracked_binary_is_not_overwritten(self) -> None:
         destination = self.destination()
         destination.parent.mkdir()
@@ -83,6 +89,7 @@ class DevelopmentPreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must not be tracked"):
             development.source_plan(self.factory)
 
+    @requires_publication
     def test_unexpected_mcp_command_is_rejected(self) -> None:
         destination = self.destination()
         path = destination.parent.parent / "mcp.json"
@@ -93,6 +100,7 @@ class DevelopmentPreparationTests(unittest.TestCase):
             development.source_plan(self.factory)
         self.assertFalse(destination.exists())
 
+    @requires_publication
     def test_real_cargo_failure_preserves_existing_binaries(self) -> None:
         plan = development.source_plan(self.factory)
         for destination in plan.values():
