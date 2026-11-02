@@ -399,6 +399,12 @@ jobs:
           esac
           output_dir="$RUNNER_TEMP/xsec-native-sidecars"
           mkdir -p "$output_dir"
+          for sidecar_cmd in attack-path-mcp asset-discovery-mcp; do
+            if [ ! -d ".xsec-desktop-source/go/cmd/$sidecar_cmd" ]; then
+              echo "xSecDesktop source is missing go/cmd/$sidecar_cmd; the pinned xSecDesktop commit must contain the Go sidecar packages." >&2
+              exit 1
+            fi
+          done
           (
             cd .xsec-desktop-source/go
             export CGO_ENABLED=0 GOOS="$go_os" GOARCH="$go_arch"
@@ -426,6 +432,11 @@ jobs:
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
+          foreach ($sidecarCmd in 'attack-path-mcp', 'asset-discovery-mcp') {
+            if (-not (Test-Path -LiteralPath (Join-Path '.xsec-desktop-source\go\cmd' $sidecarCmd) -PathType Container)) {
+              throw "xSecDesktop source is missing go\cmd\$sidecarCmd; the pinned xSecDesktop commit must contain the Go sidecar packages."
+            }
+          }
           Push-Location .xsec-desktop-source\go
           try {
             go build -trimpath -o (Join-Path $outputDirectory 'attack-path-mcp') ./cmd/attack-path-mcp
