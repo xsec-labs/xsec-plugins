@@ -26,4 +26,6 @@ artifact acceptance. Publication requires fresh evidence from the new
 repositories and workflows. Existing immutable releases remain in the private
 migration audit backup and are not represented as new publication evidence.
 
-Until the first protected publication, the source gate runs with `--allow-pending-publication`. That flag accepts an empty marketplace index only while no package snapshot is retained. Unit tests that read unpublished snapshots, or first-party submodules that CI does not check out, are skipped by `tests/publication_gate.py` and run again once that material exists.
+Until the first protected publication, the source gate runs with `--allow-pending-publication`. That flag accepts an empty marketplace index only while no package snapshot is retained. Unit tests that read unpublished snapshots are skipped by `tests/publication_gate.py` and run again once snapshots exist. Four tests need first-party submodules (`plugins/<id>`). They run only in a checkout that includes those submodules. No CI job does that today, so they stay skipped in CI until a protected job checks out the submodules. Owner: not yet assigned.
+
+First-publication checklist: remove `--allow-pending-publication` from `validate.yml`. Until then, a PR that deletes every snapshot and empties the index passes the source gate. Owner: not yet assigned.

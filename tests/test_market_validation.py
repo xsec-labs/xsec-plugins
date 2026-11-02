@@ -439,14 +439,13 @@ class MarketplaceValidationTests(unittest.TestCase):
         ]
         subprocess.run(command, cwd=ROOT, check=True, capture_output=True, text=True)
 
-    @requires_publication
     def test_source_gate_accepts_disposable_unsigned_output(self) -> None:
         """Accept a disposable unsigned marketplace produced from current sources."""
 
         with tempfile.TemporaryDirectory(prefix="xsec-market-source-test-") as directory:
             output = Path(directory) / "marketplace"
             self.build_marketplace(output)
-            validate_source(ROOT, output, allow_pending_native_sources=True)
+            validate_source(ROOT, output, allow_pending_native_sources=True, allow_pending_publication=True)
 
     @requires_publication
     def test_source_gate_preserves_active_discovery_and_default_set_in_disposable_output(self) -> None:
@@ -457,7 +456,6 @@ class MarketplaceValidationTests(unittest.TestCase):
         expected_entries = {
             entry["pluginId"] for entry in registry["plugins"]
             if entry["status"] == "active"
-            and (snapshot_dir(ROOT, entry["pluginId"]) / "plugin.json").is_file()
         }
         with tempfile.TemporaryDirectory(prefix="xsec-market-active-default-set-") as directory:
             output = Path(directory) / "marketplace"

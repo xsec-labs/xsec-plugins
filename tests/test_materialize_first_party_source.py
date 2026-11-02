@@ -352,6 +352,24 @@ class FirstPartySourceMaterializerTests(unittest.TestCase):
         # Twelve active first-party packages plus the retired, disabled project-workspace record.
         self.assertEqual(len(materializer.FIRST_PARTY_APPROVED_SOURCES), 13)
         self.assertEqual(
+            set(materializer.FIRST_PARTY_APPROVED_SOURCES),
+            {
+                "com.xsec.asset-discovery",
+                "com.xsec.attack-path",
+                "com.xsec.binary-analysis",
+                "com.xsec.jwt-analysis",
+                "com.xsec.project-workspace",
+                "com.xsec.system-terminal",
+                "com.xsec.workspace.approvals",
+                "com.xsec.workspace.browser",
+                "com.xsec.workspace.conversation-tree",
+                "com.xsec.workspace.files",
+                "com.xsec.workspace.project-outcomes",
+                "com.xsec.workspace.sub-agent",
+                "com.xsec.workspace.traffic",
+            },
+        )
+        self.assertEqual(
             materializer.FIRST_PARTY_APPROVED_SOURCES["com.xsec.binary-analysis"],
             "xsec-labs/xsec-plugin-binary-analysis",
         )
