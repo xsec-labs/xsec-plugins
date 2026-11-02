@@ -321,6 +321,10 @@ jobs:
             exit 1
           }
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .xsec-desktop-source/go/go.mod
+          cache-dependency-path: .xsec-desktop-source/go/go.sum
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -387,15 +391,22 @@ jobs:
           CARGO_TARGET_DIR: ${{ runner.temp }}/xsec-native-sidecars-cargo
         run: |
           set -euo pipefail
-          cargo build --locked --release --package xsec-attack-path-mcp --package xsec-asset-discovery-mcp --target "$RUST_TARGET" --manifest-path .xsec-desktop-source/Cargo.toml
+          case "$RUST_TARGET" in
+            aarch64-apple-darwin) go_os=darwin go_arch=arm64 ;;
+            x86_64-apple-darwin) go_os=darwin go_arch=amd64 ;;
+            x86_64-unknown-linux-gnu) go_os=linux go_arch=amd64 ;;
+            *) echo "Unsupported native sidecar target: $RUST_TARGET" >&2; exit 1 ;;
+          esac
           output_dir="$RUNNER_TEMP/xsec-native-sidecars"
           mkdir -p "$output_dir"
-          attack_path_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/xsec-attack-path-mcp"
-          asset_discovery_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/xsec-asset-discovery-mcp"
-          [ -f "$attack_path_binary" ] && [ ! -L "$attack_path_binary" ] && [ -s "$attack_path_binary" ]
-          [ -f "$asset_discovery_binary" ] && [ ! -L "$asset_discovery_binary" ] && [ -s "$asset_discovery_binary" ]
-          cp "$attack_path_binary" "$output_dir/attack-path-mcp"
-          cp "$asset_discovery_binary" "$output_dir/asset-discovery-mcp"
+          (
+            cd .xsec-desktop-source/go
+            export CGO_ENABLED=0 GOOS="$go_os" GOARCH="$go_arch"
+            go build -trimpath -o "$output_dir/attack-path-mcp" ./cmd/attack-path-mcp
+            go build -trimpath -o "$output_dir/asset-discovery-mcp" ./cmd/asset-discovery-mcp
+          )
+          [ -f "$output_dir/attack-path-mcp" ] && [ ! -L "$output_dir/attack-path-mcp" ] && [ -s "$output_dir/attack-path-mcp" ]
+          [ -f "$output_dir/asset-discovery-mcp" ] && [ ! -L "$output_dir/asset-discovery-mcp" ] && [ -s "$output_dir/asset-discovery-mcp" ]
           chmod 0755 "$output_dir/attack-path-mcp"
           chmod 0755 "$output_dir/asset-discovery-mcp"
           cargo build --locked --release --package binary-analysis-mcp --target "$RUST_TARGET" --manifest-path .xsec-binary-analysis-source/Cargo.toml
@@ -410,15 +421,21 @@ jobs:
           CARGO_TARGET_DIR: ${{ runner.temp }}/xsec-native-sidecars-cargo
         run: |
           $ErrorActionPreference = 'Stop'
-          cargo build --locked --release --package xsec-attack-path-mcp --package xsec-asset-discovery-mcp --target $env:RUST_TARGET --manifest-path .xsec-desktop-source/Cargo.toml
           $outputDirectory = Join-Path $env:RUNNER_TEMP 'xsec-native-sidecars'
           New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
-          $attackPathBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\xsec-attack-path-mcp.exe"
-          $assetDiscoveryBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\xsec-asset-discovery-mcp.exe"
-          if (-not (Test-Path -LiteralPath $attackPathBinary -PathType Leaf)) { throw 'Attack-path MCP binary is unavailable' }
-          if (-not (Test-Path -LiteralPath $assetDiscoveryBinary -PathType Leaf)) { throw 'Asset-discovery MCP binary is unavailable' }
-          Copy-Item -LiteralPath $attackPathBinary -Destination (Join-Path $outputDirectory 'attack-path-mcp')
-          Copy-Item -LiteralPath $assetDiscoveryBinary -Destination (Join-Path $outputDirectory 'asset-discovery-mcp')
+          $env:CGO_ENABLED = '0'
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          Push-Location .xsec-desktop-source\go
+          try {
+            go build -trimpath -o (Join-Path $outputDirectory 'attack-path-mcp') ./cmd/attack-path-mcp
+            if ($LASTEXITCODE -ne 0) { throw 'Attack-path MCP build failed' }
+            go build -trimpath -o (Join-Path $outputDirectory 'asset-discovery-mcp') ./cmd/asset-discovery-mcp
+            if ($LASTEXITCODE -ne 0) { throw 'Asset-discovery MCP build failed' }
+          }
+          finally { Pop-Location }
+          if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory 'attack-path-mcp') -PathType Leaf)) { throw 'Attack-path MCP binary is unavailable' }
+          if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory 'asset-discovery-mcp') -PathType Leaf)) { throw 'Asset-discovery MCP binary is unavailable' }
           cargo build --locked --release --package binary-analysis-mcp --target $env:RUST_TARGET --manifest-path .xsec-binary-analysis-source\Cargo.toml
           $binaryAnalysisBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\binary-analysis-mcp.exe"
           if (-not (Test-Path -LiteralPath $binaryAnalysisBinary -PathType Leaf)) { throw 'Binary-analysis MCP binary is unavailable' }
