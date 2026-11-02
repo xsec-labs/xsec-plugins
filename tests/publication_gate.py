@@ -3,8 +3,9 @@
 Before the first protected publication the Factory retains no package
 snapshots, and the first-party plugin submodules are not checked out by CI.
 Tests that read either are skipped with the reason shown in the run. Each gate
-reads the checkout itself, so the tests run again as soon as the material is
-present; nothing needs editing at publication time.
+reads the checkout itself, so a test runs again as soon as its material is
+present. The first-publication checklist in docs/source-initialization.md
+removes the publication gates and the --allow-pending-publication flag.
 """
 
 from __future__ import annotations
