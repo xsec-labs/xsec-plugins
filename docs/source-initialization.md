@@ -25,3 +25,5 @@ Source validation does not establish marketplace availability or native
 artifact acceptance. Publication requires fresh evidence from the new
 repositories and workflows. Existing immutable releases remain in the private
 migration audit backup and are not represented as new publication evidence.
+
+Until the first protected publication, the source gate runs with `--allow-pending-publication`. That flag accepts an empty marketplace index only while no package snapshot is retained. Unit tests that read unpublished snapshots, or first-party submodules that CI does not check out, are skipped by `tests/publication_gate.py` and run again once that material exists.

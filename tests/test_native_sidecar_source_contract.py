@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import build_market  # noqa: E402
 import native_sidecars  # noqa: E402
 import validate_market  # noqa: E402
+from publication_gate import requires_submodule
 
 
 SOURCE_REVISION = "b" * 40
@@ -50,6 +51,7 @@ def sidecar_inputs(root: Path, recipe: native_sidecars.NativeSidecarRecipe) -> d
 
 
 class NativeSidecarSourceContractTests(unittest.TestCase):
+    @requires_submodule("com.xsec.binary-analysis")
     def test_binary_analysis_source_contains_pinned_license_materials(self) -> None:
         source = ROOT / "plugins" / "com.xsec.binary-analysis"
         required_files = (
@@ -87,6 +89,8 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
             packages["radare2"]["sourceInfo"],
         )
 
+    @requires_submodule("com.xsec.attack-path")
+    @requires_submodule("com.xsec.binary-analysis")
     def test_registered_sources_follow_their_declared_sidecar_contract(self) -> None:
         for plugin_id, expected_recipe in native_sidecars.RECIPES.items():
             source = ROOT / ".xsec-factory" / "snapshots" / plugin_id
@@ -112,6 +116,7 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
                     {("any", "any")},
                 )
 
+    @requires_submodule("com.xsec.binary-analysis")
     def test_binary_analysis_submodule_declares_its_factory_contract(self) -> None:
         plugin_id = "com.xsec.binary-analysis"
         source = ROOT / "plugins" / plugin_id
