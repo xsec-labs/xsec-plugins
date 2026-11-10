@@ -340,6 +340,7 @@ jobs:
         env:
           XSEC_MARKETPLACE_SOURCE_APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
           XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        shell: bash
         run: |
           [ -n "$XSEC_MARKETPLACE_SOURCE_APP_ID" ] && [ -n "$XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY" ] || {
             echo "Binary-analysis builds require the read-only Marketplace Source App." >&2
@@ -450,7 +451,7 @@ jobs:
           cargo build --locked --release --package binary-analysis-mcp --target $env:RUST_TARGET --manifest-path .xsec-binary-analysis-source\Cargo.toml
           $binaryAnalysisBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\binary-analysis-mcp.exe"
           if (-not (Test-Path -LiteralPath $binaryAnalysisBinary -PathType Leaf)) { throw 'Binary-analysis MCP binary is unavailable' }
-          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp.exe')
+          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp')
       - name: Build the Windows binary-analysis engine bundle
         if: ${{ matrix.shell == 'pwsh' }}
         shell: msys2 {0}
