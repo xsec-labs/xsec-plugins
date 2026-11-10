@@ -340,6 +340,7 @@ jobs:
         env:
           XSEC_MARKETPLACE_SOURCE_APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
           XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        shell: bash
         run: |
           [ -n "$XSEC_MARKETPLACE_SOURCE_APP_ID" ] && [ -n "$XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY" ] || {
             echo "Binary-analysis builds require the read-only Marketplace Source App." >&2
