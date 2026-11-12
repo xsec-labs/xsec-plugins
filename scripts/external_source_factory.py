@@ -3355,7 +3355,12 @@ def validate_trusted_baseline_continuity(
         # identity and append-only release checks above and forbid unrelated
         # state transitions from using this exception.
         if baseline_registration.trust_tier == "first-party" and baseline_registration.status == "pending-adoption":
-            if registration.status not in {"pending-adoption", "active"}:
+            if registration.status not in {"pending-adoption", "active"} or (
+                # A pending row is a migration of legacy releases: it becomes
+                # active only through the KMS adoption flow, never as a fresh
+                # first-party row backed by self-written evidence.
+                registration.status == "active" and first_party_fresh(root, registration)
+            ):
                 fail(
                     f"pending first-party official plugin {plugin_id} must remain pending or be activated "
                     "with an immutable adoption proof"

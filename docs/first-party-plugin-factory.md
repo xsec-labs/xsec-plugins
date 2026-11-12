@@ -73,7 +73,8 @@ Factory PR；之后的发布走来源事件 batch。没有拆仓历史的第一�
 证明，其每个 release 都必须由 Factory publication evidence 覆盖，与 external
 插件相同；它们的信任来自评审过的 Registry PR 加 Factory evidence。之后的 batch
 照常重新暂存它们，停用（`disabled`）后仍按 evidence 规则校验，因此可以下架。已有
-adoption 证明的插件不能在后续去掉它。main 声明了尚无 Factory 配方的原生 MCP 时，
+adoption 证明的插件不能在后续去掉它；`pending-adoption` 的行只能经 KMS adoption
+流程变为 active，不能靠自写的 evidence 变成这种无历史插件。main 声明了尚无 Factory 配方的原生 MCP 时，
 main 门禁记为 `waiting_for_beta`，Beta 照常发布。
 
 前端里非 host 接收者的 `x.request(() => ...)` 是帧调度，不算 RPC；按名字传回调

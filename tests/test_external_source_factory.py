@@ -1454,6 +1454,28 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "must remain pending or be activated"):
                 factory.validate_registry_and_snapshots(root, baseline_root=baseline)
 
+            # Activating without the adoption, on self-written evidence for
+            # the legacy releases, is not a fresh first-party publication.
+            active = self.first_party_entry(status="active")
+            write_json(root / ".xsec-factory" / "official-registry.json", {"schemaVersion": 2, "plugins": [active]})
+            registration = factory.registration_for(root, "com.xsec.workspace.sub-agent")
+            self.assertTrue(factory.first_party_fresh(root, registration))
+            document = json.loads(factory.release_path(root, registration.plugin_id).read_text(encoding="utf-8"))
+            for record in document["releases"]:
+                factory.append_evidence(
+                    root,
+                    registration,
+                    factory.publication_event(registration, "beta", "e" * 40, record, "attacker"),
+                )
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "must remain pending or be activated"):
+                # PR CI mode: unsigned proofs and sidecars are allowed.
+                factory.validate_registry_and_snapshots(
+                    root,
+                    baseline_root=baseline,
+                    require_publication_proofs=False,
+                    require_active_release_sidecars=False,
+                )
+
     def test_snapshot_root_rejects_symlink_entries_before_ownership_checks(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-external-snapshot-link-") as directory:
             root = Path(directory)
