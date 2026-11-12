@@ -294,6 +294,12 @@ def packed_runtime_manifest(
     raise ValueError(f"native runtime kind is not allowlisted for {recipe.plugin_id}")
 
 
+def binary_engine_executable_path(target: NativeTarget) -> PurePosixPath:
+    """The radare2 executable the sidecar launches, relative to the engine root."""
+
+    return PurePosixPath("radare2/bin/r2.exe" if target.os_name == "windows" else "radare2/bin/r2")
+
+
 def binary_engine_manifest(root: Path, target: NativeTarget) -> tuple[bytes, dict[str, str]]:
     require_regular_runtime_root(root)
     files, digests = runtime_file_records(
@@ -535,7 +541,7 @@ def require_binary_engine_manifest_components(
         raise ValueError("binary engine bundle is missing engine-versions.json")
     if BINARY_ENGINE_LICENSE_INVENTORY not in paths:
         raise ValueError(f"binary engine bundle is missing {BINARY_ENGINE_LICENSE_INVENTORY}")
-    executable = "radare2/bin/r2.exe" if target.os_name == "windows" else "radare2/bin/r2"
+    executable = binary_engine_executable_path(target).as_posix()
     if executable not in paths:
         raise ValueError(f"binary engine bundle is missing {executable}")
     plugin_names = {
@@ -1047,9 +1053,12 @@ def install_packed_runtime(
     copied_manifest, _ = packed_runtime_manifest(recipe, destination_root, target)
     if copied_manifest != runtime.manifest:
         raise ValueError("packed runtime changed while the Factory staged it")
+    # Workflow artifacts do not keep file modes, so restore the one entrypoint
+    # each runtime launches; the archive validator requires it to be executable.
     if recipe.packed_runtime_kind == "browser-node":
-        node = destination_root / browser_runtime_node_path(target)
-        node.chmod(0o755)
+        (destination_root / browser_runtime_node_path(target)).chmod(0o755)
+    elif recipe.packed_runtime_kind == "binary-engine":
+        (destination_root / binary_engine_executable_path(target)).chmod(0o755)
     (destination_root / "manifest.json").write_bytes(runtime.manifest)
 
 
@@ -1198,7 +1207,7 @@ def validate_packed_binary_engine_archive(
     index = archive_members.get("engine/manifest.json")
     if index is None or not archive_member_is_regular_file(index):
         raise ValueError("binary engine manifest is missing or non-regular")
-    executable = "engine/radare2/bin/r2.exe" if target.os_name == "windows" else "engine/radare2/bin/r2"
+    executable = f"engine/{binary_engine_executable_path(target).as_posix()}"
     member = archive_members.get(executable)
     if member is None or not archive_member_is_executable(member):
         raise ValueError(f"binary engine entrypoint is missing or not executable: {executable}")

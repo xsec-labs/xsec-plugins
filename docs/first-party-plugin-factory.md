@@ -64,6 +64,24 @@ Finalizer 合并前重新读取候选的来源分支头和 Factory main，使用
 两阶段 activation 操作已退役；当前注册和发布使用上述流程，历史证据保留在 Git 历史及
 不可变记录中。任何再次迁移都应先核对源字节、release history 和现行 validator。
 
+## 首次正式发布
+
+发现索引为空且没有快照时，维护者在 Factory main 上手动运行
+`initial-marketplace-release.yml`。它只在这种状态下运行，调用与来源事件相同的
+`publish-marketplace-batch.yml`，一次读取全部 active 插件的 Beta 头并生成一个
+Factory PR；之后的发布走来源事件 batch。没有拆仓历史的第一方插件不需要 adoption
+证明，其每个 release 都必须由 Factory publication evidence 覆盖，与 external
+插件相同；它们的信任来自评审过的 Registry PR 加 Factory evidence。之后的 batch
+照常重新暂存它们，停用（`disabled`）后仍按 evidence 规则校验，因此可以下架。已有
+adoption 证明的插件不能在后续去掉它；`pending-adoption` 的行只能经 KMS adoption
+流程变为 active，不能靠自写的 evidence 变成这种无历史插件。main 声明了尚无 Factory 配方的原生 MCP 时，
+main 门禁记为 `waiting_for_beta`，Beta 照常发布。
+
+前端里非 host 接收者的 `x.request(() => ...)` 是帧调度，不算 RPC；按名字传回调
+（`frame.request(exec)`）无法和 host 别名区分，只对
+`REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256` 里评审过的前端源码放行。
+asset-discovery 的打包前端变化时，需要评审新 bundle 并在同一个 PR 里更新这个摘要。
+
 ## 开发与验收入口
 
 - [本地开发准备](local-plugin-development.md)：复用 Desktop Cargo 构建结果准备 MCP 入口。

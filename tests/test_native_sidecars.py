@@ -81,6 +81,35 @@ def native_registration() -> factory.Registration:
 
 
 class NativeSidecarFactoryTests(unittest.TestCase):
+    def test_first_publication_has_no_retained_native_beta_contract(self) -> None:
+        recipe = native_sidecars.RECIPES["com.xsec.binary-analysis"]
+        empty = {"schemaVersion": 2, "pluginId": recipe.plugin_id, "releases": [], "channels": {"beta": None, "stable": None}}
+        self.assertEqual(build_market.retained_native_beta_contract(recipe, empty, "a" * 40), (recipe, None))
+        with self.assertRaisesRegex(ValueError, "invalid Beta history"):
+            build_market.retained_native_beta_contract(
+                recipe,
+                {**empty, "releases": [{"releaseId": "x"}]},
+                "a" * 40,
+            )
+
+    def test_packed_runtime_bytes_stay_exact_in_the_archive(self) -> None:
+        """Runtime files are bound to their manifest digests, so CRLF must survive."""
+
+        recipe = native_sidecars.RECIPES["com.xsec.workspace.browser"]
+        with tempfile.TemporaryDirectory(prefix="xsec-packed-runtime-bytes-") as directory:
+            plugin = Path(directory) / "plugin"
+            plugin.mkdir()
+            (plugin / "plugin.json").write_text(json.dumps({"name": recipe.plugin_id, "version": "1.0.0"}), encoding="utf-8")
+            (plugin / "notes.txt").write_bytes(b"source\r\n")
+            runtime_file = plugin / "runtime" / "node_modules" / "pkg" / "index.js"
+            runtime_file.parent.mkdir(parents=True)
+            runtime_file.write_bytes(b"module.exports = 1;\r\n")
+            archive = Path(directory) / "plugin.xsec-plugin"
+            build_market.write_zip(plugin, archive, recipe)
+            with zipfile.ZipFile(archive) as packed:
+                self.assertEqual(packed.read("runtime/node_modules/pkg/index.js"), b"module.exports = 1;\r\n")
+                self.assertEqual(packed.read("notes.txt"), b"source\n")
+
     def test_binary_analysis_recipe_requires_verified_engine_bundle(self) -> None:
         recipe = native_sidecars.BINARY_ANALYSIS_RECIPE
         self.assertEqual(len(recipe.targets), 4)

@@ -63,6 +63,7 @@ from native_sidecars import (
     packed_runtime_directory,
     packed_runtime_manifest,
     recipe_for_source,
+    source_declares_native_sidecar_contract,
     targets_for_provenance_version,
     validate_provenance,
 )
@@ -733,6 +734,26 @@ def adoption_path(root: Path, plugin_id: str) -> Path:
     return root / ADOPTIONS_RELATIVE_PATH / f"{safe_plugin_id(plugin_id)}.json"
 
 
+def first_party_fresh(root: Path, registration: Registration) -> bool:
+    """Whether a first-party plugin was first published by this Factory.
+
+    A first-party plugin split out of Desktop starts from a signed adoption of
+    its legacy release history. A first-party plugin with no legacy history
+    has nothing to adopt: like an external package, every one of its releases
+    must be covered by append-only Factory publication evidence, which the
+    callers then require. Any adoption file, signed or not, keeps the adoption
+    rules, and the trusted-baseline gate refuses to drop an adoption later.
+    A fresh plugin stays fresh when it is disabled, so it can be withdrawn;
+    only a pending adoption always follows the adoption rules.
+    """
+
+    if registration.trust_tier != "first-party" or registration.status == "pending-adoption":
+        return False
+    adoption = adoption_path(root, registration.plugin_id)
+    sidecar = root / ADOPTION_PROOFS_RELATIVE_PATH / f"{safe_plugin_id(registration.plugin_id)}.json"
+    return not any(path.exists() or is_link(path) for path in (adoption, sidecar))
+
+
 def status_path(root: Path, plugin_id: str) -> Path:
     return root / ".xsec-factory" / "official-status" / f"{safe_plugin_id(plugin_id)}.json"
 
@@ -1140,7 +1161,7 @@ def marketplace_entry(registration: Registration) -> dict[str, object]:
 def require_owned_publication(root: Path, registration: Registration) -> None:
     """Refuse to claim an already discoverable plugin without Factory evidence."""
 
-    if registration.trust_tier == "first-party":
+    if registration.trust_tier == "first-party" and not first_party_fresh(root, registration):
         # A split built-in begins with its signed adoption rather than a
         # synthetic external-source evidence event.  The adoption locks the
         # retained release history and source identity before beta can replace
@@ -1181,7 +1202,7 @@ def update_marketplace_entry(root: Path, registration: Registration) -> None:
         # looking structurally like an external entry is not ownership: that
         # would allow a later registry edit to replace another publisher's
         # snapshot below the same local path.
-        if registration.trust_tier == "first-party":
+        if registration.trust_tier == "first-party" and not first_party_fresh(root, registration):
             # stage_beta already validated the prior snapshot/adoption before
             # replacing it.  At this point the new source has not yet been
             # packaged, so re-validating the old beta artifact against the
@@ -1764,10 +1785,30 @@ def check_main_rebuild(root: Path, plugin_id: str, source_root: Path) -> dict[st
         f"external main source for {registration.plugin_id}",
     )
     _, current_beta = current_beta_record(root, registration.plugin_id)
-    candidate = candidate_release_id(root, source_dir, registration, current_beta)
     beta_release_id = current_beta.get("releaseId")
     if not isinstance(beta_release_id, str) or not RELEASE_ID_PATTERN.fullmatch(beta_release_id):
         fail("external beta release pointer is unavailable")
+    if registration.plugin_id not in RECIPES and current_beta.get("nativeSidecarProvenance") is None:
+        # A malformed main still fails closed before it can be reported as
+        # an ordinary release-ordering state.
+        source_manifest(source_dir, registration)
+        try:
+            unbuildable_native_main = source_declares_native_sidecar_contract(source_dir, registration.plugin_id)
+        except ValueError as error:
+            raise ExternalSourceFactoryError(f"external native plugin contract is invalid: {error}") from error
+        if unbuildable_native_main:
+            # Main already declares a native MCP that has no Factory recipe,
+            # while the current Beta is a plain package. Main cannot rebuild
+            # that Beta, which is the ordinary release-ordering state; Stable
+            # waits until a Beta with a reviewed recipe exists.
+            return {
+                "plugin_id": registration.plugin_id,
+                "beta_release_id": beta_release_id,
+                "candidate_release_id": "",
+                "state": "waiting_for_beta",
+                "smoke_ready": "false",
+            }
+    candidate = candidate_release_id(root, source_dir, registration, current_beta)
     smoke_ready = candidate == beta_release_id
     return {
         "plugin_id": registration.plugin_id,
@@ -2000,7 +2041,7 @@ def validate_adoption(
     require_kms_proof: bool = True,
     require_active_release_sidecar: bool = True,
 ) -> None:
-    if registration.trust_tier != "first-party":
+    if registration.trust_tier != "first-party" or first_party_fresh(root, registration):
         return
     path = adoption_path(root, registration.plugin_id)
     if not path.exists() or is_link(path) or not path.is_file():
@@ -2113,6 +2154,8 @@ def adopted_release_ids(root: Path, registration: Registration, *, state_label: 
 
     if registration.trust_tier != "first-party":
         fail(f"{state_label} is not a first-party registration")
+    if first_party_fresh(root, registration):
+        return ()
     path = adoption_path(root, registration.plugin_id)
     if is_link(path) or not path.is_file():
         fail(f"{state_label} first-party adoption proof for {registration.plugin_id} is unavailable")
@@ -3004,7 +3047,7 @@ def publication_smoke_outcome_history(root: Path, registration: Registration, *,
 def ownership_history(root: Path, registration: Registration, *, state_label: str) -> tuple[str, ...]:
     """Return immutable source-ownership assertions for baseline continuity."""
 
-    if registration.trust_tier == "external":
+    if registration.trust_tier == "external" or first_party_fresh(root, registration):
         return publication_evidence_history(root, registration, state_label=state_label)
     path = adoption_path(root, registration.plugin_id)
     if is_link(path) or not path.is_file():
@@ -3312,14 +3355,20 @@ def validate_trusted_baseline_continuity(
         # identity and append-only release checks above and forbid unrelated
         # state transitions from using this exception.
         if baseline_registration.trust_tier == "first-party" and baseline_registration.status == "pending-adoption":
-            if registration.status not in {"pending-adoption", "active"}:
+            if registration.status not in {"pending-adoption", "active"} or (
+                # A pending row is a migration of legacy releases: it becomes
+                # active only through the KMS adoption flow, never as a fresh
+                # first-party row backed by self-written evidence.
+                registration.status == "active" and first_party_fresh(root, registration)
+            ):
                 fail(
                     f"pending first-party official plugin {plugin_id} must remain pending or be activated "
                     "with an immutable adoption proof"
                 )
             continue
         evidence = publication_path(root, plugin_id)
-        ownership = adoption_path(root, plugin_id) if registration.trust_tier == "first-party" else evidence
+        adopted = registration.trust_tier == "first-party" and not first_party_fresh(root, registration)
+        ownership = adoption_path(root, plugin_id) if adopted else evidence
         if is_link(ownership) or not ownership.is_file():
             fail(
                 f"published official Factory plugin {plugin_id} must retain its immutable snapshot, "
@@ -3782,8 +3831,9 @@ def validate_registry_and_snapshots(
                 fail(
                     f"disabled official Factory plugin {registration.plugin_id} must retain its immutable snapshot and release history"
                 )
-            if registration.trust_tier == "external" and (not evidence.is_file() or is_link(evidence)):
-                fail(f"disabled external official plugin {registration.plugin_id} must retain publication evidence")
+            evidence_owned = registration.trust_tier == "external" or first_party_fresh(root, registration)
+            if evidence_owned and (not evidence.is_file() or is_link(evidence)):
+                fail(f"disabled official plugin {registration.plugin_id} must retain publication evidence")
         elif entry is None:
             if snapshot.exists() or evidence.exists() or proof.exists() or is_link(proof):
                 fail(f"active external official plugin {registration.plugin_id} has an incomplete publication")
@@ -3816,9 +3866,12 @@ def validate_registry_and_snapshots(
             if require_publication_proofs:
                 validate_publication_proof(root, registration)
         else:
-            # A first-party entry starts from a signed adoption, preserving
-            # its historical release record/artifacts and existing pointers.
-            # It is not allowed to self-authorise by adding a registry row.
+            # A split first-party entry starts from a signed adoption,
+            # preserving its historical release record/artifacts and existing
+            # pointers. A first-party row with no adoption (first_party_fresh)
+            # is trusted like an external row: on its reviewed Registry PR
+            # plus Factory publication evidence for every release, checked
+            # below; validate_adoption returns early for it.
             validate_adoption(
                 root,
                 registration,

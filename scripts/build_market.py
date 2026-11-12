@@ -24,6 +24,7 @@ from pathlib import Path, PurePosixPath
 from native_sidecars import (
     RECIPES,
     NativeSidecarRecipe,
+    packed_runtime_directory,
     parse_packed_runtime_inputs,
     parse_native_sidecar_inputs,
     parse_native_sidecar_source_revisions,
@@ -526,6 +527,15 @@ def write_zip(
     recipe: NativeSidecarRecipe | None = None,
 ) -> None:
     files = iter_plugin_files(plugin_dir, recipe)
+    # A packed runtime is bound file by file to its runtime manifest, which
+    # the Beta and main-rebuild checks recompute from the extracted archive.
+    # Its members are build outputs, not Git checkouts, so they stay
+    # byte-exact instead of taking the source-text line-ending rule.
+    runtime_root = (
+        plugin_dir / packed_runtime_directory(recipe)
+        if recipe is not None and recipe.requires_packed_runtime
+        else None
+    )
     destination.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted(files, key=lambda item: item.relative_to(plugin_dir).as_posix()):
@@ -537,7 +547,8 @@ def write_zip(
             info.create_system = 3
             mode = 0o100755 if path.stat().st_mode & 0o111 else 0o100644
             info.external_attr = mode << 16
-            archive.writestr(info, archive_bytes(path))
+            in_runtime = runtime_root is not None and path.is_relative_to(runtime_root)
+            archive.writestr(info, path.read_bytes() if in_runtime else archive_bytes(path))
     require_package_archive_size(destination)
 
 
@@ -863,6 +874,10 @@ def retained_native_beta_contract(
     releases = release.get("releases")
     beta = channels.get("beta") if isinstance(channels, dict) else None
     beta_id = beta.get("releaseId") if isinstance(beta, dict) else None
+    if releases == [] and beta_id is None:
+        # First publication: no Beta exists yet, so there is no retained
+        # provenance to hold this build to.
+        return recipe, None
     if not isinstance(beta_id, str) or not isinstance(releases, list):
         raise ValueError(f"release metadata for {recipe.plugin_id} has invalid Beta history")
     selected = next((item for item in releases if isinstance(item, dict) and item.get("releaseId") == beta_id), None)

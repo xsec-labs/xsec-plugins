@@ -33,15 +33,23 @@ class BootstrapPluginsTests(unittest.TestCase):
             shutil.copy2(ROOT / "scripts" / name, scripts_root / name)
         factory_root = root / ".xsec-factory"
         factory_root.mkdir()
-        shutil.copy2(ROOT / factory_root.name / "official-registry.json", factory_root)
+        # bootstrap_plugins.py synchronizes only the retained official packages;
+        # plugins that joined the Registry later are published by the Factory.
+        registry = json.loads((ROOT / factory_root.name / "official-registry.json").read_text(encoding="utf-8"))
+        registry["plugins"] = [entry for entry in registry["plugins"] if entry["pluginId"] in OFFICIAL_PLUGIN_IDS]
+        (factory_root / "official-registry.json").write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
         for plugin_id in OFFICIAL_PLUGIN_IDS:
             snapshot = ROOT / factory_root.name / "snapshots" / plugin_id
             shutil.copytree(snapshot, factory_root / "snapshots" / plugin_id)
             source = source_root / plugin_id
             source.mkdir(parents=True)
             shutil.copy2(snapshot / "plugin.json", source / "plugin.json")
-        retained_snapshot = ROOT / factory_root.name / "snapshots" / PROJECT_WORKSPACE_PLUGIN_ID
-        shutil.copytree(retained_snapshot, factory_root / "snapshots" / PROJECT_WORKSPACE_PLUGIN_ID)
+        # A retired package that is no longer in the index. Desktop owns project
+        # management now, so the Factory never published this one; a small
+        # stand-in proves bootstrap leaves an unindexed snapshot untouched.
+        retained_frontend = factory_root / "snapshots" / PROJECT_WORKSPACE_PLUGIN_ID / "com.xsec.desktop" / "frontend" / "index.js"
+        retained_frontend.parent.mkdir(parents=True)
+        retained_frontend.write_text("export function activate(host) {}\n", encoding="utf-8")
         return source_root
 
     @requires_publication
