@@ -109,6 +109,15 @@ jobs:
             shell: pwsh
             rust_target: x86_64-pc-windows-msvc
     steps:
+      # The browser runtime steps run this repository's scripts/; check it
+      # out first, because a root checkout cleans the source checkouts below.
+      - name: Check out the Factory scripts at this workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
       - name: Create a scoped Desktop source token
         id: desktop-source-token
         uses: actions/create-github-app-token@v2
@@ -144,6 +153,8 @@ jobs:
         env:
           XSEC_MARKETPLACE_SOURCE_APP_ID: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
           XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
+        # The Windows matrix entry defaults to pwsh, which cannot parse this test.
+        shell: bash
         run: |
           [ -n "$XSEC_MARKETPLACE_SOURCE_APP_ID" ] && [ -n "$XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY" ] || {
             echo "Binary-analysis builds require the read-only Marketplace Source App." >&2
@@ -192,8 +203,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.23.2
-          cache: pnpm
-          cache-dependency-path: .xsec-desktop-source/pnpm-lock.yaml
       - name: Install macOS engine build tools
         if: ${{ matrix.shell == 'bash' && startsWith(matrix.runner, 'macos-') }}
         run: brew install meson ninja pkg-config
@@ -302,10 +311,13 @@ jobs:
             if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory $name) -PathType Leaf)) { throw "$name binary is unavailable" }
           }
           corepack enable
+          if ($LASTEXITCODE -ne 0) { throw 'corepack enable failed' }
           pnpm --dir .xsec-desktop-source install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
           $runtimeDeploy = Join-Path $env:RUNNER_TEMP "xsec-browser-runtime-deps-$env:RUST_TARGET"
           if (Test-Path -LiteralPath $runtimeDeploy) { throw 'Browser runtime staging path already exists' }
           pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy $runtimeDeploy
+          if ($LASTEXITCODE -ne 0) { throw 'pnpm deploy failed' }
           $runtimeRoot = Join-Path $outputDirectory 'browser-runtime'
           New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'node\windows-x86_64') -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'bridge') -Force | Out-Null
@@ -324,7 +336,7 @@ jobs:
           cargo build --locked --release --package binary-analysis-mcp --target $env:RUST_TARGET --manifest-path .xsec-binary-analysis-source/Cargo.toml
           $binaryAnalysisBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET/release/binary-analysis-mcp.exe"
           if (-not (Test-Path -LiteralPath $binaryAnalysisBinary -PathType Leaf)) { throw 'Binary-analysis MCP binary is unavailable' }
-          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp.exe')
+          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp')
       - name: Build the Windows binary-analysis engine bundle
         if: ${{ matrix.shell == 'pwsh' }}
         shell: msys2 {0}

@@ -2378,6 +2378,50 @@ export function renderPlaceholder() {}
             steps,
         )
 
+    def test_native_sidecar_shell_steps_name_their_shell_on_windows(self) -> None:
+        import yaml
+
+        for name in ("publish.yml", "publish-marketplace-batch.yml"):
+            workflow = yaml.safe_load((ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+            job = workflow["jobs"]["build-native-sidecars"]
+            self.assertNotIn("defaults", job)
+            self.assertIn("pwsh", {entry["shell"] for entry in job["strategy"]["matrix"]["include"]})
+            # The runtime steps call this repository's scripts/, so the job
+            # must check itself out, and before the nested source checkouts.
+            first = job["steps"][0]
+            self.assertEqual(first.get("uses"), "actions/checkout@v4", name)
+            self.assertNotIn("repository", first.get("with", {}), name)
+            self.assertNotIn("path", first.get("with", {}), name)
+            for step in job["steps"]:
+                if "run" not in step:
+                    continue
+                with self.subTest(workflow=name, step=step.get("name")):
+                    # A run step without a shell uses the runner default, which
+                    # is pwsh on the Windows matrix entry. Bash-only steps must
+                    # say so unless they only run on the bash matrix entries.
+                    condition = step.get("if", "")
+                    bash_only = "matrix.shell == 'bash'" in condition and "||" not in condition
+                    self.assertTrue("shell" in step or bash_only, "run step can reach Windows without a declared shell")
+
+    def test_publish_builds_every_native_sidecar_the_release_requires(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+        batch = (ROOT / ".github" / "workflows" / "publish-marketplace-batch.yml").read_text(encoding="utf-8")
+        sidecar_job = workflow.split("  build-native-sidecars:\n", 1)[1].split("  sign-and-publish:\n", 1)[0]
+        signing_job = workflow.split("  sign-and-publish:\n", 1)[1]
+        # The release step requires these four sidecars on every target,
+        # including Windows, under their extensionless input names.
+        for binary in ("attack-path-mcp", "asset-discovery-mcp", "browser-mcp", "binary-analysis-mcp"):
+            self.assertIn(f'binary_name="{binary}"', signing_job)
+            self.assertIn(f'"$output_dir/{binary}"', sidecar_job)
+            self.assertIn(f"(Join-Path $outputDirectory '{binary}')", sidecar_job)
+        self.assertIn("go build -trimpath -o (Join-Path $outputDirectory 'browser-mcp') ./cmd/browser-mcp", sidecar_job)
+        self.assertIn('runtime_root="$output_dir/browser-runtime"', sidecar_job)
+        self.assertIn("$runtimeRoot = Join-Path $outputDirectory 'browser-runtime'", sidecar_job)
+        self.assertIn('runtime="$sidecar_root/xsec-native-sidecars-$target/browser-runtime"', signing_job)
+        for text in (workflow, batch):
+            self.assertNotIn("'binary-analysis-mcp.exe')", text.replace('release/binary-analysis-mcp.exe"', ""))
+            self.assertNotIn("cache: pnpm", text)
+
     def test_disposable_build_rejects_nested_plugin_link_before_copytree(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-market-copy-link-") as directory:
             source_root = Path(directory) / "source"
