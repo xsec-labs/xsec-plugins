@@ -2378,6 +2378,24 @@ export function renderPlaceholder() {}
             steps,
         )
 
+    def test_native_sidecar_shell_steps_name_their_shell_on_windows(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8"))
+        job = workflow["jobs"]["build-native-sidecars"]
+        self.assertIn("pwsh", {entry["shell"] for entry in job["strategy"]["matrix"]["include"]})
+        for step in job["steps"]:
+            if "run" not in step:
+                continue
+            with self.subTest(step=step.get("name")):
+                # A run step without a shell uses the runner default, which is
+                # pwsh on the Windows matrix entry. Bash-only steps must say so
+                # unless they are already limited to the bash matrix entries.
+                self.assertTrue(
+                    "shell" in step or "matrix.shell == 'bash'" in step.get("if", ""),
+                    "run step can reach the Windows runner without a declared shell",
+                )
+
     def test_disposable_build_rejects_nested_plugin_link_before_copytree(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-market-copy-link-") as directory:
             source_root = Path(directory) / "source"
