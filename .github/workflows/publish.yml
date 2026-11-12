@@ -929,7 +929,15 @@ jobs:
           native_inputs=()
           retained_revisions=()
           source_revisions=()
-          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis; do
+          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis com.xsec.jwt-analysis; do
+            # build_market.py accepts sidecar inputs only for native plugins
+            # that the discovery index lists. Before a plugin's first
+            # publication it has no index entry and no retained snapshot, so
+            # it takes no part in this run. An external Beta target is
+            # already staged into the index above.
+            if ! jq -e --arg id "$native_plugin" '.plugins | any(.name == $id)' .agents/plugins/marketplace.json >/dev/null; then
+              continue
+            fi
             if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then
               retained_source_root="$RUNNER_TEMP/xsec-retained-native-source/$native_plugin"
               retained_root="$RUNNER_TEMP/xsec-retained-native-beta/$native_plugin"
@@ -959,6 +967,10 @@ jobs:
               com.xsec.asset-discovery) binary_name="asset-discovery-mcp" ;;
               com.xsec.workspace.browser) binary_name="browser-mcp" ;;
               com.xsec.binary-analysis) binary_name="binary-analysis-mcp" ;;
+              com.xsec.jwt-analysis)
+                echo "The protected builder does not build the jwt-analysis sidecar yet; com.xsec.jwt-analysis cannot be published from fresh sources." >&2
+                exit 1
+                ;;
               *) echo "Unknown native plugin: $native_plugin" >&2; exit 1 ;;
             esac
             for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
