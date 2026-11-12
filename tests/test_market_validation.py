@@ -2386,6 +2386,12 @@ export function renderPlaceholder() {}
             job = workflow["jobs"]["build-native-sidecars"]
             self.assertNotIn("defaults", job)
             self.assertIn("pwsh", {entry["shell"] for entry in job["strategy"]["matrix"]["include"]})
+            # The runtime steps call this repository's scripts/, so the job
+            # must check itself out, and before the nested source checkouts.
+            first = job["steps"][0]
+            self.assertEqual(first.get("uses"), "actions/checkout@v4", name)
+            self.assertNotIn("repository", first.get("with", {}), name)
+            self.assertNotIn("path", first.get("with", {}), name)
             for step in job["steps"]:
                 if "run" not in step:
                     continue

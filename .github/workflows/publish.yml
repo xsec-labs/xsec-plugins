@@ -277,6 +277,15 @@ jobs:
             shell: pwsh
             rust_target: x86_64-pc-windows-msvc
     steps:
+      # The browser runtime steps run this repository's scripts/; check it
+      # out first, because a root checkout cleans the source checkouts below.
+      - name: Check out the Factory scripts at this workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
       - name: Require the dedicated read-only Desktop source App
         env:
           XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
@@ -482,10 +491,13 @@ jobs:
             if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory $name) -PathType Leaf)) { throw "$name binary is unavailable" }
           }
           corepack enable
+          if ($LASTEXITCODE -ne 0) { throw 'corepack enable failed' }
           pnpm --dir .xsec-desktop-source install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
           $runtimeDeploy = Join-Path $env:RUNNER_TEMP "xsec-browser-runtime-deps-$env:RUST_TARGET"
           if (Test-Path -LiteralPath $runtimeDeploy) { throw 'Browser runtime staging path already exists' }
           pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy $runtimeDeploy
+          if ($LASTEXITCODE -ne 0) { throw 'pnpm deploy failed' }
           $runtimeRoot = Join-Path $outputDirectory 'browser-runtime'
           New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'node\windows-x86_64') -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'bridge') -Force | Out-Null
