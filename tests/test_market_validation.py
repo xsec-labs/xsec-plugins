@@ -29,6 +29,8 @@ from validate_market import (  # noqa: E402
     validate_source,
 )
 
+PROJECT_WORKSPACE_PLUGIN_ID = "com.xsec.project-workspace"
+
 
 def snapshot_dir(root: Path, plugin_id: str) -> Path:
     """Return the retained Factory snapshot directory for one plugin."""
@@ -488,12 +490,16 @@ class MarketplaceValidationTests(unittest.TestCase):
             "com.xsec.workspace.traffic",
         })
         for plugin_id, contract in contracts.items():
+            if plugin_id == PROJECT_WORKSPACE_PLUGIN_ID:
+                # Desktop owns project management; this package is never published.
+                continue
             with self.subTest(plugin_id=plugin_id):
                 plugin_dir = snapshot_dir(ROOT, plugin_id)
                 manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
                 source = (plugin_dir / "com.xsec.desktop" / "frontend" / "index.js").read_text(encoding="utf-8")
                 validate_market.validate_official_settings_contract(manifest, plugin_id)
-                self.assertIn("host.context?.kind", source)
+                # Approvals reads the same host context through its api wrapper.
+                self.assertRegex(source, r"\b(?:host|api)\.context\?\.kind")
                 self.assertIn("settings-page", source)
                 self.assertIn(
                     f"onSettingsPage:{contract['page']}",
@@ -1032,6 +1038,39 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "activation-reachable"):
             validate_market.frontend_host_requests(tokens, "frontend")
 
+    def test_frontend_accepts_bundled_callback_schedulers_named_request(self) -> None:
+        """UI libraries schedule frames with ``x.request(callback)``, which is not an RPC."""
+
+        source = (
+            "class AnimationFrame{static request(fn){return scheduler.request(fn)}}"
+            "const frame=new AnimationFrame;function lockScroll(){}"
+            "export function activate(host){"
+            "AnimationFrame.request(()=>{});frame.request(lockScroll);"
+            "frame.request(function(){});frame.request(async()=>{});"
+            'host.request("xsec.good",{})}'
+        )
+        tokens = validate_market.javascript_contract_tokens(source, "frontend")
+        self.assertEqual(validate_market.frontend_host_requests(tokens, "frontend"), {"xsec.good"})
+
+    def test_frontend_callback_scheduler_exemption_keeps_rpc_shaped_calls_unresolved(self) -> None:
+        cases = (
+            "const broker=host;broker.request(method)",
+            "const wrapper={broker:host};broker.request(method)",
+            'const METHOD="xsec.bad";frame.request(METHOD)',
+            'frame.request("xsec.bad")',
+            "frame.request(`xsec.bad`)",
+            "frame.request(method,{})",
+            "owner.frame.request(()=>{})",
+            "frame().request(()=>{})",
+            "frame.request(host)",
+        )
+        for body in cases:
+            with self.subTest(body=body):
+                source = f'export function activate(host){{{body};host.request("xsec.good",{{}})}}'
+                tokens = validate_market.javascript_contract_tokens(source, "frontend")
+                with self.assertRaisesRegex(MarketplaceValidationError, "unresolved receiver"):
+                    validate_market.frontend_host_requests(tokens, "frontend")
+
     def test_frontend_rejects_noncanonical_parenthesized_and_alias_receivers(self) -> None:
         cases = (
             '(true?fake:host).request("xsec.bad",{})',
@@ -1374,9 +1413,8 @@ class MarketplaceValidationTests(unittest.TestCase):
         approval_source = (
             snapshot_dir(ROOT, "com.xsec.workspace.approvals") / "com.xsec.desktop" / "frontend" / "index.js"
         ).read_text(encoding="utf-8")
-        self.assertIn("let settingsReady = false;", approval_source)
-        self.assertIn("settingsReady = false;", approval_source)
-        self.assertIn("if (!settingsReady)", approval_source)
+        self.assertRegex(approval_source, r"(?:let |this\.)settingsReady = false;")
+        self.assertRegex(approval_source, r"if \(!(?:this\.)?settingsReady\)")
         self.assertIn('saveButton.disabled = true;', approval_source)
 
         traffic_source = (
@@ -1385,7 +1423,14 @@ class MarketplaceValidationTests(unittest.TestCase):
         assert_traffic_settings_isolation(self, traffic_source)
 
         for plugin_id in validate_market.OFFICIAL_PLUGIN_SETTINGS_CONTRACT:
-            if plugin_id in {"com.xsec.system-terminal", "com.xsec.workspace.traffic"}:
+            # Traffic and asset-discovery (a React bundle with onRetry props) are
+            # covered by their dedicated isolation assertions above.
+            if plugin_id in {
+                "com.xsec.asset-discovery",
+                "com.xsec.system-terminal",
+                "com.xsec.workspace.traffic",
+                PROJECT_WORKSPACE_PLUGIN_ID,
+            }:
                 continue
             frontend = snapshot_dir(ROOT, plugin_id) / "com.xsec.desktop" / "frontend" / "index.js"
             settings_source = frontend.read_text(encoding="utf-8")
@@ -1621,12 +1666,20 @@ class MarketplaceValidationTests(unittest.TestCase):
                 if "xsec.workspace.tool.open" in methods
                 else "^1.2.0"
             )
-            self.assertEqual(desktop["engines"]["pluginApi"], expected_plugin_api, plugin_id)
+            # The range may start above the floor its methods need (binary-analysis
+            # declares ^1.5.0), but never below it.
+            declared = desktop["engines"]["pluginApi"]
+            self.assertRegex(declared, r"^\^\d+\.\d+\.\d+$", plugin_id)
+            self.assertGreaterEqual(
+                tuple(int(part) for part in declared[1:].split(".")),
+                tuple(int(part) for part in expected_plugin_api[1:].split(".")),
+                plugin_id,
+            )
             self.assertEqual(desktop["frontendApi"]["version"], 2, plugin_id)
             self.assertTrue(desktop["frontendApi"]["methods"], plugin_id)
             source = (plugin_dir / "com.xsec.desktop" / "frontend" / "index.js").read_text(encoding="utf-8")
             self.assertNotIn(placeholder, source, plugin_id)
-            self.assertIn("export function activate(host)", source, plugin_id)
+            self.assertRegex(source, r"export (?:async )?function activate\(host\)", plugin_id)
 
     @requires_publication
     def test_generic_official_frontend_gate_rejects_success_screen_stub(self) -> None:

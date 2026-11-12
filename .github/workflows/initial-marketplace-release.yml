@@ -1,0 +1,55 @@
+name: Publish the initial official Marketplace release
+
+# One-time entry for the first official publication. Source events reach the
+# batch publisher only through the Cloud dispatcher, and the built-in
+# publisher rebuilds only plugins the index already lists, so nothing else can
+# publish an empty Marketplace. This entry refuses to run once any plugin or
+# snapshot exists; later releases follow the normal source-event batches.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  require-empty-marketplace:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require Factory main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [ "$REF" = "refs/heads/main" ] || { echo "The initial release requires Factory main." >&2; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Require an unpublished Marketplace
+        run: |
+          set -euo pipefail
+          jq -e '.plugins == []' .agents/plugins/marketplace.json >/dev/null || {
+            echo "The Marketplace already lists plugins; later releases use source-event batches." >&2
+            exit 1
+          }
+          if find .xsec-factory/snapshots -mindepth 1 -maxdepth 1 -type d | grep -q .; then
+            echo "The Factory already retains plugin snapshots; the initial release has run." >&2
+            exit 1
+          fi
+          if find .xsec-factory/official-publications -mindepth 1 -type f 2>/dev/null | grep -q .; then
+            echo "The Factory already retains publication evidence; the initial release has run." >&2
+            exit 1
+          fi
+  build-initial-batch:
+    needs: require-empty-marketplace
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
+    uses: ./.github/workflows/publish-marketplace-batch.yml
+    with:
+      delivery_key: initial-release:${{ github.run_id }}.${{ github.run_attempt }}
+      trigger_label: initial-release
+    secrets: inherit

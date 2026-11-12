@@ -38,8 +38,9 @@ from native_sidecars import (
     PackedRuntimeInput,
     RECIPES,
     archive_path_for,
-    browser_runtime_manifest,
     declares_native_sidecar_contract,
+    packed_runtime_directory,
+    packed_runtime_manifest,
     recipe_for_source,
     staged_plugin,
     target_for,
@@ -68,12 +69,14 @@ APPROVALS_PLUGIN_ID = "com.xsec.workspace.approvals"
 TRAFFIC_PLUGIN_ID = "com.xsec.workspace.traffic"
 APPROVALS_FRONTEND_METHODS = frozenset({
     "xsec.approvals.list",
+    "xsec.approvals.detail",
     "xsec.approvals.statistics",
     "xsec.approvals.settings.get",
     "xsec.approvals.settings.set",
 })
 APPROVALS_FRONTEND_METHOD_CONTRACT = {
     "xsec.approvals.list": ("workspace.session.read", "session"),
+    "xsec.approvals.detail": ("workspace.session.read", "session"),
     "xsec.approvals.statistics": ("workspace.session.read", "session"),
     "xsec.approvals.settings.get": ("pluginData.read", "plugin"),
     "xsec.approvals.settings.set": ("pluginData.write", "plugin"),
@@ -231,6 +234,7 @@ APPROVALS_FRONTEND_SOURCE_SHA256_BY_VERSION = {
     "1.3.3": "863a044877a3f2600f67cac69bff084e6d6a36f1aee6e6fc599abdaa8192021e",
     "1.3.4": "863a044877a3f2600f67cac69bff084e6d6a36f1aee6e6fc599abdaa8192021e",
     "2.0.0": "863a044877a3f2600f67cac69bff084e6d6a36f1aee6e6fc599abdaa8192021e",
+    "2.0.1": "ee1eb068a2f67275a41a208fe49d0634055804a4d144440d72092dac34b410c0",
 }
 class MarketplaceValidationError(ValueError):
     """A marketplace invariant was not met."""
@@ -2713,6 +2717,57 @@ def frontend_canonical_host_calls(
     return calls, direct_accesses
 
 
+def frontend_bound_names(dense: list[tuple[str, str]]) -> tuple[set[str], set[str]]:
+    """Names assigned or initialized from a string literal, and from ``host``."""
+
+    strings: set[str] = set()
+    hosts: set[str] = set()
+    for index in range(len(dense) - 2):
+        kind, value = dense[index]
+        if kind != "identifier" or dense[index + 1] not in {("punctuation", "="), ("punctuation", ":")}:
+            continue
+        if dense[index + 2][0] in {"string", "template"}:
+            strings.add(value)
+        elif dense[index + 2] == ("identifier", "host"):
+            hosts.add(value)
+    return strings, hosts
+
+
+def frontend_request_is_callback_scheduler(
+    dense: list[tuple[str, str]], access: int, bound_names: tuple[set[str], set[str]]
+) -> bool:
+    """Whether ``receiver.request(callback)`` schedules a callback, not an RPC.
+
+    Bundled UI libraries expose frame schedulers such as
+    ``AnimationFrame.request(() => ...)`` or ``frame.request(exec)``. A host
+    RPC names its method first, so a call whose first argument is a function
+    or a lone callback name that is never bound to a string cannot request
+    one. The receiver must be a plain name that is neither ``host`` nor bound
+    to it; computed, called and forwarded receivers stay unresolved.
+    """
+
+    string_names, host_names = bound_names
+    if dense[access] != ("identifier", "request") or access < 2:
+        return False
+    if dense[access - 1] != ("punctuation", ".") or dense[access - 2][0] != "identifier":
+        return False
+    receiver = dense[access - 2][1]
+    if receiver == "host" or receiver in host_names or access >= 3 and dense[access - 3] == ("punctuation", "."):
+        return False
+    if access + 2 >= len(dense) or dense[access + 1] != ("punctuation", "("):
+        return False
+    first = dense[access + 2]
+    if first == ("identifier", "function") or first == ("identifier", "async"):
+        return True
+    if first == ("punctuation", "("):
+        closing = matching_parenthesis(dense, access + 2)
+        return closing is not None and dense[closing + 1:closing + 3] == [("punctuation", "="), ("punctuation", ">")]
+    if first[0] != "identifier" or first[1] == "host" or first[1] in string_names:
+        return False
+    following = dense[access + 3:access + 5]
+    return following[:1] == [("punctuation", ")")] or following == [("punctuation", "="), ("punctuation", ">")]
+
+
 def frontend_host_request_calls(
     dense: list[tuple[str, str]], label: str
 ) -> list[tuple[int, int, int]]:
@@ -2723,7 +2778,13 @@ def frontend_host_request_calls(
     canonical_accesses = {access for _, _, access in calls}
     accesses = frontend_request_access_indices(dense)
     invoked_accesses = {access for access in accesses if frontend_request_access_invoked(dense, access)}
-    if (direct_accesses | invoked_accesses) - canonical_accesses:
+    unresolved = (direct_accesses | invoked_accesses) - canonical_accesses
+    if unresolved:
+        bound_names = frontend_bound_names(dense)
+        unresolved = {
+            access for access in unresolved if not frontend_request_is_callback_scheduler(dense, access, bound_names)
+        }
+    if unresolved:
         fail(f"{label} contains a host RPC request through an unresolved receiver")
     return calls
 
@@ -2882,10 +2943,15 @@ def validate_official_frontend(manifest: dict[str, object], source: str, label: 
     activation = frontend_activation_body_range(tokens)
     if activation is None:
         fail(f"{label} must export an executable activate(host)")
-    if not frontend_has_executable_lifecycle(tokens, activation):
-        fail(f"{label} must return executable mount/update/dispose lifecycle methods")
     if frontend_contains_dynamic_evaluator(tokens):
         fail(f"{label} contains a dynamic JavaScript evaluator")
+    if manifest.get("name") == APPROVALS_PLUGIN_ID:
+        # validate_approvals_frontend pins the exact reviewed approvals source
+        # instead of proving reachability, so its class-based pages need not
+        # fit the object-literal lifecycle proof below.
+        return
+    if not frontend_has_executable_lifecycle(tokens, activation):
+        fail(f"{label} must return executable mount/update/dispose lifecycle methods")
     if manifest.get("name") == TRAFFIC_PLUGIN_ID:
         validate_traffic_frontend(manifest, source, label)
         return
@@ -3071,17 +3137,22 @@ def validate_archive(
             except KeyError:
                 fail(f"artifact {path} does not include root plugin.json")
             mcp_bytes = archive.read(members["mcp.json"]) if "mcp.json" in members else None
-            packed_runtime_manifest = (
-                archive.read("runtime/manifest.json")
-                if recipe is not None and recipe.requires_packed_runtime and "runtime/manifest.json" in members
+            runtime_prefix = (
+                f"{packed_runtime_directory(recipe).as_posix()}/"
+                if recipe is not None and recipe.requires_packed_runtime
+                else None
+            )
+            archived_runtime_manifest = (
+                archive.read(f"{runtime_prefix}manifest.json")
+                if runtime_prefix is not None and f"{runtime_prefix}manifest.json" in members
                 else None
             )
             packed_runtime_digests: dict[str, str] = {}
-            if recipe is not None and recipe.requires_packed_runtime:
+            if runtime_prefix is not None:
                 for name, info in members.items():
                     if (
-                        name.startswith("runtime/")
-                        and name != "runtime/manifest.json"
+                        name.startswith(runtime_prefix)
+                        and name != f"{runtime_prefix}manifest.json"
                         and zip_member_is_regular_file(info)
                     ):
                         digest = hashlib.sha256()
@@ -3115,7 +3186,7 @@ def validate_archive(
                 mcp_bytes,
                 os_name,
                 arch,
-                packed_runtime_manifest,
+                archived_runtime_manifest,
                 packed_runtime_digests,
             )
         except ValueError as error:
@@ -3310,7 +3381,9 @@ def validate_native_sidecar_provenance(
             with zipfile.ZipFile(artifact_path) as archive:
                 binary = archive.read(archive_path_for(recipe, target_for(recipe, rust_target)).as_posix())
                 runtime_manifest = (
-                    archive.read("runtime/manifest.json") if recipe.requires_packed_runtime else None
+                    archive.read(f"{packed_runtime_directory(recipe).as_posix()}/manifest.json")
+                    if recipe.requires_packed_runtime
+                    else None
                 )
         except (KeyError, OSError, RuntimeError, zipfile.BadZipFile) as error:
             fail(f"{label} native sidecar cannot be read: {error}")
@@ -3363,16 +3436,17 @@ def validate_native_artifact_reproducibility(
                 binary.write_bytes(archive.read(archive_path_for(recipe, target).as_posix()))
                 runtime_input = None
                 if recipe.requires_packed_runtime:
+                    runtime_directory = packed_runtime_directory(recipe).as_posix()
                     runtime_root = root / f"{target.rust_target}-runtime"
                     for info in archive.infolist():
                         name = PurePosixPath(info.filename).as_posix()
-                        if not name.startswith("runtime/") or name == "runtime/manifest.json":
+                        if not name.startswith(f"{runtime_directory}/") or name == f"{runtime_directory}/manifest.json":
                             continue
-                        destination = runtime_root / PurePosixPath(name).relative_to("runtime")
+                        destination = runtime_root / PurePosixPath(name).relative_to(runtime_directory)
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         destination.write_bytes(archive.read(info))
-                    manifest, _ = browser_runtime_manifest(runtime_root, target)
-                    archived_manifest = archive.read("runtime/manifest.json")
+                    manifest, _ = packed_runtime_manifest(recipe, runtime_root, target)
+                    archived_manifest = archive.read(f"{runtime_directory}/manifest.json")
                     if manifest != archived_manifest:
                         fail(f"native MCP artifact for {plugin_id} has a non-reproducible packed runtime")
                     runtime_input = PackedRuntimeInput(
@@ -3382,7 +3456,7 @@ def validate_native_artifact_reproducibility(
                     )
             with staged_plugin(source_dir, files, recipe, target, binary, runtime_input) as staging:
                 rebuilt = root / f"{target.rust_target}.xsec-plugin"
-                write_zip(staging, rebuilt)
+                write_zip(staging, rebuilt, recipe)
             if rebuilt.read_bytes() != artifact.read_bytes():
                 fail(f"native MCP artifact for {plugin_id} is not deterministic from its source and sidecar")
 

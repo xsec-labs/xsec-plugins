@@ -64,6 +64,16 @@ Finalizer 合并前重新读取候选的来源分支头和 Factory main，使用
 两阶段 activation 操作已退役；当前注册和发布使用上述流程，历史证据保留在 Git 历史及
 不可变记录中。任何再次迁移都应先核对源字节、release history 和现行 validator。
 
+## 首次正式发布
+
+发现索引为空且没有快照时，维护者在 Factory main 上手动运行
+`initial-marketplace-release.yml`。它只在这种状态下运行，调用与来源事件相同的
+`publish-marketplace-batch.yml`，一次读取全部 active 插件的 Beta 头并生成一个
+Factory PR；之后的发布走来源事件 batch。没有拆仓历史的第一方插件不需要 adoption
+证明，其每个 release 都必须由 Factory publication evidence 覆盖，与 external
+插件相同；已有 adoption 证明的插件不能在后续去掉它。main 声明了尚无 Factory 配方的
+原生 MCP 时，main 门禁记为 `waiting_for_beta`，Beta 照常发布。
+
 ## 开发与验收入口
 
 - [本地开发准备](local-plugin-development.md)：复用 Desktop Cargo 构建结果准备 MCP 入口。

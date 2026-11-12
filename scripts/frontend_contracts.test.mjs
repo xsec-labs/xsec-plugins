@@ -98,8 +98,20 @@ test("marketplace bootstrap preserves every package-owned frontend", { skip: awa
     await cp(join(root, "scripts", "build_market.py"), join(marketplaceRoot, "scripts", "build_market.py"));
     await cp(join(root, "scripts", "native_sidecars.py"), join(marketplaceRoot, "scripts", "native_sidecars.py"));
     await cp(join(root, "scripts", "marketplace_contract.py"), join(marketplaceRoot, "scripts", "marketplace_contract.py"));
-    await cp(join(root, ".xsec-factory", "official-registry.json"), join(marketplaceRoot, ".xsec-factory", "official-registry.json"));
+    // bootstrap_plugins.py synchronizes only the retained official packages
+    // (marketplace_contract.OFFICIAL_PLUGIN_IDS); plugins that joined the
+    // Registry later, such as binary-analysis, are published by the Factory.
+    const registry = JSON.parse(await readFile(join(root, ".xsec-factory", "official-registry.json"), "utf8"));
+    const retained = spawnSync(pythonCommand, ["-c", "import json, marketplace_contract; print(json.dumps(marketplace_contract.OFFICIAL_PLUGIN_IDS))"], {
+      cwd: join(root, "scripts"),
+      encoding: "utf8",
+    });
+    assert.equal(retained.status, 0, retained.stderr);
+    const retainedIds = new Set(JSON.parse(retained.stdout));
+    registry.plugins = registry.plugins.filter(({ pluginId }) => retainedIds.has(pluginId));
+    await writeFile(join(marketplaceRoot, ".xsec-factory", "official-registry.json"), `${JSON.stringify(registry, null, 2)}\n`, "utf8");
     const marketplace = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
+    marketplace.plugins = marketplace.plugins.filter(({ name }) => retainedIds.has(name));
     for (const entry of marketplace.plugins) {
       const pluginId = entry.name;
       await mkdir(join(desktopRoot, pluginId), { recursive: true });

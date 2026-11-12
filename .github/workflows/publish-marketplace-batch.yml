@@ -32,6 +32,7 @@ jobs:
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
       binary_source_sha: ${{ steps.binary-source.outputs.source_sha }}
+      jwt_source_sha: ${{ steps.jwt-source.outputs.source_sha }}
     steps:
       - name: Require the dedicated read-only Desktop source App
         env:
@@ -74,7 +75,7 @@ jobs:
           app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
           private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
           owner: xsec-labs
-          repositories: xsec-plugin-binary-analysis
+          repositories: xsec-plugin-binary-analysis,xsec-plugin-jwt-analysis
           permission-contents: read
       - name: Resolve the current binary-analysis Beta revision
         id: binary-source
@@ -84,6 +85,15 @@ jobs:
           set -euo pipefail
           source_sha="$(gh api repos/xsec-labs/xsec-plugin-binary-analysis/git/ref/heads/beta --jq .object.sha)"
           [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Binary-analysis Beta did not resolve to a canonical commit SHA." >&2; exit 1; }
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+      - name: Resolve the current jwt-analysis Beta revision
+        id: jwt-source
+        env:
+          GH_TOKEN: ${{ steps.binary-source-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          source_sha="$(gh api repos/xsec-labs/xsec-plugin-jwt-analysis/git/ref/heads/beta --jq .object.sha)"
+          [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "JWT-analysis Beta did not resolve to a canonical commit SHA." >&2; exit 1; }
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
   build-native-sidecars:
     needs: resolve-native-sidecar-source
@@ -167,7 +177,7 @@ jobs:
           app-id: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_ID }}
           private-key: ${{ secrets.XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY }}
           owner: xsec-labs
-          repositories: xsec-plugin-binary-analysis
+          repositories: xsec-plugin-binary-analysis,xsec-plugin-jwt-analysis
           permission-contents: read
       - name: Check out the exact binary-analysis Beta revision
         uses: actions/checkout@v4
@@ -192,6 +202,29 @@ jobs:
             echo "Binary-analysis source revision does not contain its pinned engine builder." >&2
             exit 1
           }
+      - name: Check out the exact jwt-analysis Beta revision
+        uses: actions/checkout@v4
+        with:
+          repository: xsec-labs/xsec-plugin-jwt-analysis
+          github-server-url: https://github.com
+          ref: ${{ needs.resolve-native-sidecar-source.outputs.jwt_source_sha }}
+          token: ${{ steps.binary-source-token.outputs.token }}
+          path: .xsec-jwt-analysis-source
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Verify the exact jwt-analysis source revision
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.jwt_source_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git -C .xsec-jwt-analysis-source rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA" ]
+          [ -f .xsec-jwt-analysis-source/scripts/build_sidecar.py ] && [ -f .xsec-jwt-analysis-source/requirements-build.lock ] || {
+            echo "JWT-analysis source revision does not contain its pinned sidecar builder." >&2
+            exit 1
+          }
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-go@v5
         with:
@@ -203,6 +236,32 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.23.2
+      - name: Build the reviewed jwt-analysis MCP sidecar
+        # PyInstaller builds for the host it runs on, so every matrix runner
+        # builds its own target. Windows needs the .exe name while building;
+        # like the other sidecars, the artifact name has no extension.
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/xsec-native-sidecars"
+          mkdir -p "$output_dir"
+          venv="$RUNNER_TEMP/xsec-jwt-analysis-build-env"
+          dist="$RUNNER_TEMP/xsec-jwt-analysis-dist"
+          [ ! -e "$venv" ] && [ ! -e "$dist" ] || { echo "JWT-analysis build paths already exist." >&2; exit 1; }
+          python -m venv "$venv"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            venv_python="$venv/Scripts/python.exe"
+            built="$dist/jwt-analysis-mcp.exe"
+          else
+            venv_python="$venv/bin/python"
+            built="$dist/jwt-analysis-mcp"
+          fi
+          "$venv_python" -m pip install --disable-pip-version-check --no-input --requirement .xsec-jwt-analysis-source/requirements-build.lock
+          "$venv_python" .xsec-jwt-analysis-source/scripts/build_sidecar.py --output "$built"
+          "$venv_python" .xsec-jwt-analysis-source/scripts/verify_sidecar.py "$built"
+          [ -f "$built" ] && [ ! -L "$built" ] && [ -s "$built" ]
+          cp "$built" "$output_dir/jwt-analysis-mcp"
+          chmod 0755 "$output_dir/jwt-analysis-mcp"
       - name: Install macOS engine build tools
         if: ${{ matrix.shell == 'bash' && startsWith(matrix.runner, 'macos-') }}
         run: brew install meson ninja pkg-config
@@ -443,6 +502,7 @@ jobs:
           BATCH: ${{ steps.registry.outputs.batch }}
           SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}
           BINARY_ANALYSIS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.binary_source_sha }}
+          JWT_ANALYSIS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.jwt_source_sha }}
         run: |
           set -euo pipefail
           roots="$RUNNER_TEMP/xsec-marketplace-batch-sources"
@@ -475,6 +535,10 @@ jobs:
               echo "Binary-analysis Beta moved after its build revision was resolved." >&2
               exit 1
             fi
+            if [ "$plugin_id" = "com.xsec.jwt-analysis" ] && [ "$beta_sha" != "$JWT_ANALYSIS_SOURCE_SHA" ]; then
+              echo "JWT-analysis Beta moved after its build revision was resolved." >&2
+              exit 1
+            fi
             git -C "$root" -c core.hooksPath=/dev/null checkout --detach --quiet "$beta_sha"
             git -C "$root" -c core.hooksPath=/dev/null worktree add --detach "$root-main" refs/remotes/xsec-batch/main
             python scripts/external_source_factory.py prepare --plugin-id "$plugin_id" --channel beta --source-sha "$beta_sha" >/dev/null
@@ -492,17 +556,20 @@ jobs:
           DELIVERY_KEY: ${{ inputs.delivery_key }}
           NATIVE_SIDECARS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.source_sha }}
           BINARY_ANALYSIS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.binary_source_sha }}
+          JWT_ANALYSIS_SOURCE_SHA: ${{ needs.resolve-native-sidecar-source.outputs.jwt_source_sha }}
         run: |
           set -euo pipefail
           sidecar_root="$RUNNER_TEMP/xsec-native-sidecars"
           native_inputs=()
           retained_revisions=()
           source_revisions=()
-          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis; do
+          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis com.xsec.jwt-analysis; do
             record="$(jq -ce --arg plugin_id "$native_plugin" '.[] | select(.plugin_id == $plugin_id)' "$RECORDS")"
             source_root="$(printf '%s' "$record" | jq -er .source_root)"
             retained_root="$RUNNER_TEMP/xsec-retained-native-beta/${native_plugin}"
-            if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
+            # Plugins built from their own source repository always rebuild
+            # from the Beta revision this run resolved and checked out.
+            if [ "$native_plugin" = "com.xsec.binary-analysis" ] || [ "$native_plugin" = "com.xsec.jwt-analysis" ]; then
               reusable=false
             else
               reconciliation="$(python scripts/external_source_factory.py --json reconcile-retained-native-beta --plugin-id "$native_plugin" --source-root "$source_root" --destination "$retained_root")"
@@ -528,6 +595,7 @@ jobs:
               com.xsec.asset-discovery) binary_name="asset-discovery-mcp" ;;
               com.xsec.workspace.browser) binary_name="browser-mcp" ;;
               com.xsec.binary-analysis) binary_name="binary-analysis-mcp" ;;
+              com.xsec.jwt-analysis) binary_name="jwt-analysis-mcp" ;;
               *) echo "Unknown native plugin: $native_plugin" >&2; exit 1 ;;
             esac
             for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
@@ -547,6 +615,9 @@ jobs:
             done
             if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
               source_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$BINARY_ANALYSIS_SOURCE_SHA")
+            fi
+            if [ "$native_plugin" = "com.xsec.jwt-analysis" ]; then
+              source_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$JWT_ANALYSIS_SOURCE_SHA")
             fi
           done
           python scripts/build_market.py --clean --native-sidecar-source-revision "$NATIVE_SIDECARS_SOURCE_SHA" "${retained_revisions[@]}" "${source_revisions[@]}" "${native_inputs[@]}"

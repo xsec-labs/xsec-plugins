@@ -2327,6 +2327,124 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             )
             factory.validate_registry_and_snapshots(root)
 
+    def make_first_party_source(self, root: Path, *, frontend: str = "export function activate() {}\n") -> Path:
+        source = root / "source"
+        source.mkdir(parents=True)
+        write_json(
+            source / "plugin.json",
+            {
+                "name": "com.xsec.workspace.sub-agent",
+                "version": "1.0.0",
+                "extensions": {
+                    "com.xsec.desktop": {
+                        "engines": {"xsec": ">=1", "pluginApi": "^1"},
+                        "entrypoints": {"frontend": "frontend.js"},
+                        "permissions": {"process.spawn": {}},
+                        "contributes": {"workspaceTools": {"sub-agent": {"title": "Sub agent"}}},
+                    }
+                },
+            },
+        )
+        (source / "frontend.js").write_text(frontend, encoding="utf-8")
+        return source
+
+    def publish_fresh_first_party_beta(self, root: Path, source: Path) -> None:
+        plugin_id = "com.xsec.workspace.sub-agent"
+        factory.stage_beta(root, plugin_id, source)
+        snapshot = snapshot_dir(root, plugin_id)
+        build_market.build_plugin(snapshot, snapshot)
+        factory.record_beta(root, plugin_id, BETA_SHA, "test-publisher")
+        write_publication_proof(root, plugin_id)
+        factory.record_status(
+            root,
+            plugin_id,
+            beta_sha=BETA_SHA,
+            stable_sha=None,
+            state="waiting_for_beta",
+            delivery_id="initial-release",
+        )
+
+    def test_first_party_without_legacy_history_publishes_on_factory_provenance(self) -> None:
+        """A first-party plugin with nothing to adopt is held to external provenance rules."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-first-party-fresh-") as directory:
+            workspace = Path(directory)
+            root = workspace / "factory"
+            plugin_id = "com.xsec.workspace.sub-agent"
+            self.make_factory(root, self.first_party_entry(status="active"))
+            source = self.make_first_party_source(workspace)
+            self.publish_fresh_first_party_beta(root, source)
+
+            registration = factory.registration_for(root, plugin_id)
+            self.assertTrue(factory.first_party_fresh(root, registration))
+            self.assertEqual(factory.adopted_release_ids(root, registration, state_label="test"), ())
+            factory.validate_registry_and_snapshots(root)
+
+            # Every release must still be covered by Factory publication evidence.
+            evidence = factory.publication_path(root, plugin_id)
+            evidence_bytes = evidence.read_bytes()
+            evidence.unlink()
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "publication evidence"):
+                factory.validate_registry_and_snapshots(root)
+            evidence.write_bytes(evidence_bytes)
+
+            # A pending registration is a migration and keeps the adoption rules.
+            pending = factory.registration_for(root, plugin_id)
+            self.assertFalse(
+                factory.first_party_fresh(
+                    root,
+                    factory.Registration(**{**pending.__dict__, "status": "pending-adoption"}),
+                )
+            )
+
+            # The next batch validates against this release as its trusted baseline.
+            baseline = workspace / "baseline"
+            shutil.copytree(root, baseline)
+            factory.validate_registry_and_snapshots(root, baseline_root=baseline)
+
+    def test_first_party_cannot_drop_an_adoption_recorded_in_the_trusted_baseline(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-first-party-adoption-retained-") as directory:
+            workspace = Path(directory)
+            root = workspace / "current"
+            plugin_id = "com.xsec.workspace.sub-agent"
+            self.make_first_party_adoption(root)
+            baseline = workspace / "baseline"
+            shutil.copytree(root, baseline)
+
+            factory.adoption_path(root, plugin_id).unlink()
+            (root / factory.ADOPTION_PROOFS_RELATIVE_PATH / f"{plugin_id}.json").unlink()
+            self.assertTrue(factory.first_party_fresh(root, factory.registration_for(root, plugin_id)))
+            with self.assertRaises(factory.ExternalSourceFactoryError):
+                factory.validate_registry_and_snapshots(root, baseline_root=baseline)
+            # Without the baseline the adopted legacy releases have no evidence.
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "publication evidence|lacks Beta provenance"):
+                factory.validate_registry_and_snapshots(root)
+
+    def test_main_declaring_an_unregistered_native_mcp_waits_for_beta(self) -> None:
+        """Main may move to a native MCP before the Factory has a recipe for it."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-first-party-unbuildable-main-") as directory:
+            workspace = Path(directory)
+            root = workspace / "factory"
+            plugin_id = "com.xsec.workspace.sub-agent"
+            self.make_factory(root, self.first_party_entry(status="active"))
+            source = self.make_first_party_source(workspace)
+            self.publish_fresh_first_party_beta(root, source)
+            self.assertNotIn(plugin_id, factory.RECIPES)
+
+            main = workspace / "source-main"
+            shutil.copytree(source, main)
+            manifest = json.loads((main / "plugin.json").read_text(encoding="utf-8"))
+            desktop = manifest["extensions"]["com.xsec.desktop"]
+            desktop["schemaVersion"] = 2
+            desktop["permissions"] = {"mcp.servers.register": {}, "native.execute": {}}
+            write_json(main / "plugin.json", manifest)
+
+            gate = factory.check_main_rebuild(root, plugin_id, main)
+            self.assertEqual(gate["state"], "waiting_for_beta")
+            self.assertEqual(gate["smoke_ready"], "false")
+            self.assertEqual(gate["candidate_release_id"], "")
+
     def test_first_party_post_adoption_evidence_is_required_and_append_only(self) -> None:
         """Adoption cannot be used to erase source provenance for newer releases."""
 
