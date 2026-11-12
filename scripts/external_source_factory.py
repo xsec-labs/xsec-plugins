@@ -1568,6 +1568,16 @@ def reconcile_retained_native_beta(
 
     source_dir = resolve_source_directory(source_root, registration.source_path, "native Beta reconciliation source")
     manifest = source_manifest(source_dir, registration)
+    try:
+        document = load_release_document(release_path(root, registration.plugin_id), registration.plugin_id)
+    except ValueError as error:
+        raise ExternalSourceFactoryError(str(error)) from error
+    channels = document.get("channels")
+    beta_pointer = channels.get("beta") if isinstance(channels, dict) else None
+    if document.get("releases") == [] and (beta_pointer is None or beta_pointer == {"releaseId": None}):
+        # First publication: nothing is retained yet, so the batch builds the
+        # sidecars from current sources (build_market applies the same rule).
+        return {"plugin_id": registration.plugin_id, "reusable": "false", "beta_release_id": ""}
     _, beta_record = current_beta_record(root, registration.plugin_id)
     beta_release_id = beta_record.get("releaseId")
     if not isinstance(beta_release_id, str) or not RELEASE_ID_PATTERN.fullmatch(beta_release_id):
