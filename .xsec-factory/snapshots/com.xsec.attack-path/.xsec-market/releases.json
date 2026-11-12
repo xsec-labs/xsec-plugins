@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 2,
+  "pluginId": "com.xsec.attack-path",
+  "releases": [
+    {
+      "releaseId": "sha256-f4c9f7687140d76b2c0243d1d0f04cd63bb140b0fa78e07e54445ab6bce279dd",
+      "version": "2.0.7",
+      "engines": {
+        "xsec": ">=0.1.0",
+        "pluginApi": "^1.3.0"
+      },
+      "artifacts": [
+        {
+          "os": "macos",
+          "arch": "aarch64",
+          "url": "artifacts/com.xsec.attack-path-2.0.7-sha256-576066add50f3f5c-macos-aarch64.xsec-plugin",
+          "sha256": "576066add50f3f5cbdf5d6a6906c6624b8cd63b12016d84fad1069c92d9b7095"
+        },
+        {
+          "os": "macos",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.attack-path-2.0.7-sha256-fa08d64fa88a64a7-macos-x86_64.xsec-plugin",
+          "sha256": "fa08d64fa88a64a7a8d273084e55141d909377589c093909890991206e5074a1"
+        },
+        {
+          "os": "linux",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.attack-path-2.0.7-sha256-0b88aa3d46557d1a-linux-x86_64.xsec-plugin",
+          "sha256": "0b88aa3d46557d1a1dee710a880c1dde9615af63bbf180d09c5f8a88d1196f18"
+        },
+        {
+          "os": "windows",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.attack-path-2.0.7-sha256-ad22f396c1a815a3-windows-x86_64.xsec-plugin",
+          "sha256": "ad22f396c1a815a352093287050a87a261dfb88fc61e732ffa1a80adc2439327"
+        }
+      ],
+      "nativeSidecarProvenance": {
+        "source": {
+          "repository": "xsec-labs/xSecDesktop",
+          "revision": "075a3dd3e90777fcc9ab089f83f00757983781df"
+        },
+        "targetMatrixVersion": 2,
+        "targets": [
+          {
+            "rustTarget": "aarch64-apple-darwin",
+            "os": "macos",
+            "arch": "aarch64",
+            "sha256": "b5624d4b77c5d6a972e34b5ef475017839fc47827264c18c02b9e950ad5e28b7"
+          },
+          {
+            "rustTarget": "x86_64-apple-darwin",
+            "os": "macos",
+            "arch": "x86_64",
+            "sha256": "6fdf9419498d0f5bd09ea054bf738cc3ce4329532dcc5f038bd01b47259390a3"
+          },
+          {
+            "rustTarget": "x86_64-unknown-linux-gnu",
+            "os": "linux",
+            "arch": "x86_64",
+            "sha256": "0ac641412a5cdfc9f2cebaeb0892ccbcd829484d3abf6eb124ffccac47404294"
+          },
+          {
+            "rustTarget": "x86_64-pc-windows-msvc",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "733c59a72bd9bc943497dde255a1328317c901cfc3a3a4a8cb39c506a281da53"
+          }
+        ]
+      }
+    }
+  ],
+  "channels": {
+    "beta": {
+      "releaseId": "sha256-f4c9f7687140d76b2c0243d1d0f04cd63bb140b0fa78e07e54445ab6bce279dd"
+    },
+    "stable": null
+  }
+}

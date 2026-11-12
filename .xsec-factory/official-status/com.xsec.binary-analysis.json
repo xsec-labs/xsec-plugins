@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.binary-analysis",
+  "trustTier": "first-party",
+  "source": {
+    "repository": "xsec-labs/xsec-plugin-binary-analysis",
+    "path": ".",
+    "refs": {
+      "beta": "refs/heads/beta",
+      "stable": "refs/heads/main"
+    },
+    "betaSha": "fff4cb5abf9da47206668e39bd72c742eb13e294",
+    "stableSha": null,
+    "mainGateSha": "420ab3fbacb84c1c1c0ebeb62af90914b3a185ea"
+  },
+  "release": {
+    "betaReleaseId": "sha256-7e41f7c5549d9eff7dbc33706a522baee1b2dad443184f899e38f6e48eb1e946",
+    "stableReleaseId": null
+  },
+  "publication": {
+    "state": "waiting_for_beta",
+    "deliveryId": "batch-43212321142.1",
+    "factoryRunUrl": "https://github.com/xsec-labs/xsec-plugins/actions/runs/43212321142",
+    "smokeRunUrl": null,
+    "marketplaceRevision": null
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "pluginId": "com.xsec.system-terminal",
+  "releases": [
+    {
+      "releaseId": "sha256-ddfd452e36caa8d25471fd9bfd10cf0562a9c248d29ffe9bc6886f66e4cc64ce",
+      "version": "2.0.0",
+      "engines": {
+        "xsec": ">=0.1.0",
+        "pluginApi": "^1.2.0"
+      },
+      "artifacts": [
+        {
+          "os": "any",
+          "arch": "any",
+          "url": "artifacts/com.xsec.system-terminal-2.0.0-sha256-82d857de3a1a7993-any-any.xsec-plugin",
+          "sha256": "82d857de3a1a7993c91d1d8a343fd844e1e7935ade8091fe7e387c62df880e54"
+        }
+      ]
+    }
+  ],
+  "channels": {
+    "beta": {
+      "releaseId": "sha256-ddfd452e36caa8d25471fd9bfd10cf0562a9c248d29ffe9bc6886f66e4cc64ce"
+    },
+    "stable": null
+  }
+}

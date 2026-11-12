@@ -1,0 +1,55 @@
+<!doctype html><meta charset="utf-8"><main id="root"></main>
+<script type="module">
+const query=new URLSearchParams(location.search),variant=query.get('variant'),scenario=query.get('scenario');
+const root=document.querySelector('#root');
+const A='lifecycle-project-a', B='lifecycle-project-b'; let projectId=A;
+const context=()=>({kind:'workspace-tool',project:{projectId}});
+const send=async(path,value)=>{const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)});const body=await response.json();if(!response.ok)throw new Error(body.error);return body};
+const host={apiVersion:2,get context(){return context()},request(method,params){return send('/rpc',{method,params,projectId})}};
+const control=(action)=>send('/control',{action,projectId:A});
+const stats=async()=>{const response=await fetch('/stats');if(!response.ok)throw new Error('boundary statistics failed');return response.json()};
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+const observationWindow=()=>new Promise(resolve=>setTimeout(resolve,2800));
+let jobsUnavailable=false;
+try{
+  assert(['baseline','current'].includes(variant),'unknown source variant');
+  const module=await import(`/${variant}.js`);const controller=await module.activate(host);
+  if(scenario==='update'){
+    await controller.mount(root,context());projectId=B;
+    await controller.update(context());const state=await stats();
+    assert(root.textContent.includes(B),'updated project title is absent');
+    assert(root.querySelector('select').value===state.jobs[B],'updated view did not read the real project B job');
+    controller.dispose();
+  }else if(scenario==='dispose-poll'){
+    await controller.mount(root,context());controller.dispose();const before=(await stats()).requests.length;
+    await observationWindow();const after=(await stats()).requests.length;
+    assert(before===after,'disposed view continued to poll the real SQLite boundary');
+    assert(root.childNodes.length===0,'disposed controller retained its DOM');
+  }else if(scenario==='dispose-pending'){
+    await control('pause-diagnostics');const mounting=controller.mount(root,context());
+    await control('wait-diagnostics');controller.dispose();await control('release-diagnostics');await mounting;
+    const before=(await stats()).requests.length;await observationWindow();const after=(await stats()).requests.length;
+    assert(before===after,'mount completion after dispose created a polling timer');
+    assert(root.childNodes.length===0,'late mount wrote DOM after dispose');
+  }else if(scenario==='update-pending'){
+    await control('pause-diagnostics');const mounting=controller.mount(root,context());await control('wait-diagnostics');
+    projectId=B;await controller.update(context());await control('release-diagnostics');await mounting;
+    const state=await stats();assert(root.textContent.includes(B),'late project A mount replaced project B');
+    assert(root.querySelector('select').value===state.jobs[B],'late mount changed selected project job');controller.dispose();
+  }else if(scenario==='failed-refresh'){
+    await controller.mount(root,context());await control('make-jobs-unavailable');jobsUnavailable=true;
+    const failed=new Promise(resolve=>window.addEventListener('unhandledrejection',event=>{event.preventDefault();resolve(event.reason.message)},{once:true}));
+    const refresh=[...root.querySelectorAll('button')].find(button=>button.textContent==='刷新');
+    assert(refresh,'refresh control missing');refresh.click();const error=await failed;
+    assert(error.includes('no such table'),'refresh did not propagate the real SQLite failure');
+    const before=(await stats()).requests.length;await observationWindow();const after=(await stats()).requests.length;
+    await control('restore-jobs');jobsUnavailable=false;controller.dispose();
+    assert(before===after,'failed refresh was retried by the polling timer');
+  }else throw new Error('unknown lifecycle scenario');
+  parent.postMessage({kind:'case-result',result:{variant,scenario,passed:true}},location.origin);
+}catch(error){
+  if(jobsUnavailable)await control('restore-jobs');
+  await control('release-diagnostics');
+  parent.postMessage({kind:'case-result',result:{variant,scenario,passed:false,error:error.message}},location.origin);
+}
+</script>

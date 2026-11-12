@@ -1,0 +1,78 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "com.xsec.jwt-analysis",
+  "version": "1.0.0",
+  "description": "Project-scoped JWT parsing, secret auditing, authorized N-day tests and evidence",
+  "author": { "name": "XSEC" },
+  "license": "GPL-3.0-only",
+  "extensions": {
+    "com.xsec.desktop": {
+      "schemaVersion": 2,
+      "displayName": "JWT 分析",
+      "publisher": "XSEC",
+      "icon": "bug",
+      "engines": { "xsec": ">=0.1.0", "pluginApi": "^1.5.0" },
+      "entrypoints": { "frontend": "./com.xsec.desktop/frontend/index.js" },
+      "activationEvents": ["onWorkspaceTool:jwt-analysis", "onSettingsPage:settings", "onAgentTool:jwt_analysis_create"],
+      "permissions": {
+        "workspace.project.read": { "reason": "Bind analysis jobs to the active project" },
+        "workspace.session.read": { "reason": "Read traffic references from the active authorized task" },
+        "filesystem.workspace.read": { "reason": "Read explicitly selected project files and configured dictionaries" },
+        "filesystem.workspace.write": { "reason": "Persist analysis workspace files when explicitly exported" },
+        "network.request": { "reason": "Send bounded JWT variants to a user-provided authorized baseline target" },
+        "process.spawn": { "reason": "Run the bundled JWT analysis MCP Sidecar" },
+        "pluginData.read": { "reason": "Read account-level JWT analysis settings" },
+        "pluginData.write": { "reason": "Save account-level JWT analysis settings" },
+        "mcp.servers.register": { "reason": "Register the JWT analysis MCP server" },
+        "native.execute": { "reason": "Run the Factory-built JWT analysis Sidecar" },
+        "workspace.tool.open": { "reason": "Open the project JWT analysis workspace after creating a job" }
+      },
+      "frontendApi": {
+        "version": 2,
+        "module": "single-esm",
+        "methods": {
+          "xsec.jwt-analysis.diagnostics": { "capability": "workspace.project.read", "binding": "context", "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_diagnostics" },
+          "xsec.jwt-analysis.jobs.list": { "capability": "workspace.project.read", "binding": "context", "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_list" },
+          "xsec.jwt-analysis.jobs.get": { "capability": "workspace.project.read", "binding": "context", "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_get" },
+          "xsec.jwt-analysis.jobs.events": { "capability": "workspace.project.read", "binding": "context", "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_events" },
+          "xsec.jwt-analysis.evidence.get": { "capability": "workspace.project.read", "binding": "context", "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_evidence_get" },
+          "xsec.jwt-analysis.report": { "capability": "workspace.project.read", "binding": "context", "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_report" },
+          "xsec.plugin.config.get": { "capability": "pluginData.read", "binding": "plugin" },
+          "xsec.plugin.config.set": { "capability": "pluginData.write", "binding": "plugin" }
+        }
+      },
+      "contributes": {
+        "workspaceTools": {
+          "jwt-analysis": {
+            "title": "JWT 分析",
+            "icon": "bug",
+            "scope": "project",
+            "launchable": true,
+            "policy": "entity-singleton",
+            "surface": "standard",
+            "retain": "always",
+            "preferredSideWidth": 760,
+            "preferredBottomHeight": 540,
+            "defaultDock": "side",
+            "surfaces": ["interactive-dock", "batch-observe"]
+          }
+        },
+        "settingsPages": {
+          "settings": { "title": "JWT 分析", "group": "plugins", "page": "settings", "icon": "settings", "order": 120 }
+        },
+        "agentTools": {
+          "diagnostics": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_diagnostics", "workspaceToolId": "jwt-analysis", "permission": "workspace.project.read", "roles": ["parent", "sub"] },
+          "create": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_create", "workspaceToolId": "jwt-analysis", "permission": "network.request" },
+          "list": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_list", "workspaceToolId": "jwt-analysis", "permission": "workspace.project.read", "roles": ["parent", "sub"] },
+          "get": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_get", "workspaceToolId": "jwt-analysis", "permission": "workspace.project.read", "roles": ["parent", "sub"] },
+          "events": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_events", "workspaceToolId": "jwt-analysis", "permission": "workspace.project.read", "roles": ["parent", "sub"] },
+          "cancel": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_cancel", "workspaceToolId": "jwt-analysis", "permission": "workspace.project.read" },
+          "retry": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_retry", "workspaceToolId": "jwt-analysis", "permission": "network.request" },
+          "evidence": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_evidence_get", "workspaceToolId": "jwt-analysis", "permission": "workspace.project.read", "roles": ["parent", "sub"] },
+          "report": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_report", "workspaceToolId": "jwt-analysis", "permission": "workspace.project.read", "roles": ["parent", "sub"] },
+          "delete": { "mcpServer": "jwt-analysis", "mcpTool": "jwt_analysis_delete", "workspaceToolId": "jwt-analysis", "permission": "pluginData.write" }
+        }
+      }
+    }
+  }
+}

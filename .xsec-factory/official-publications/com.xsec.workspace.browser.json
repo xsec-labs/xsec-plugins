@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.browser",
+  "events": [
+    {
+      "channel": "beta",
+      "releaseId": "sha256-38e6e76992107eb37341281ff45dd161659be33b2a6e2afd1bcf37b006768d69",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-browser",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "312a5733198ff707a44d15b962fbb0e7d23fe0fc"
+      },
+      "artifact": {
+        "sha256": "42f6bdfdd4ef77580da3aaa4f4aef4ba0f8d9cbddf40325fcf954292bce8bd2f",
+        "url": "artifacts/com.xsec.workspace.browser-3.1.0-sha256-42f6bdfdd4ef7758-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
+    }
+  ]
+}

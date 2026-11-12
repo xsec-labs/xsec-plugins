@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.traffic",
+  "trustTier": "first-party",
+  "source": {
+    "repository": "xsec-labs/xsec-plugin-traffic",
+    "path": ".",
+    "refs": {
+      "beta": "refs/heads/beta",
+      "stable": "refs/heads/main"
+    },
+    "betaSha": "6dd95472b8e6a0248de87f5ef2740a844eb37734",
+    "stableSha": null,
+    "mainGateSha": "099ccccec83f196177de67afa350276a8276bdc4"
+  },
+  "release": {
+    "betaReleaseId": "sha256-383480c69a8c0c984d1d266f97f2b8559f314f91fe82a69967948d9500fb961e",
+    "stableReleaseId": null
+  },
+  "publication": {
+    "state": "waiting_for_beta",
+    "deliveryId": "batch-43212321142.1",
+    "factoryRunUrl": "https://github.com/xsec-labs/xsec-plugins/actions/runs/43212321142",
+    "smokeRunUrl": null,
+    "marketplaceRevision": null
+  }
+}

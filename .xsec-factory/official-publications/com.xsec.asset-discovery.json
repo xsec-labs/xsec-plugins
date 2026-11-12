@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.asset-discovery",
+  "events": [
+    {
+      "channel": "beta",
+      "releaseId": "sha256-3706be30a7f3d5ae48823e4200b7c8cac17a24b067887bf6a4a3bfa5e6f04573",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-asset-discovery",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "451c027e9c36479d43b82b715463c965764a11bd"
+      },
+      "artifact": {
+        "sha256": "134aad8204e443119c92f00f3703d3ef8007ec4feed7a0d2b8f8f026fe818a8b",
+        "url": "artifacts/com.xsec.asset-discovery-2.1.2-sha256-134aad8204e44311-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
+    }
+  ]
+}

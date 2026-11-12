@@ -1,0 +1,27 @@
+{
+  "name": "com.xsec.jwt-analysis",
+  "version": "1.0.0",
+  "description": "Project-scoped JWT security analysis for XSEC Desktop",
+  "author": {
+    "name": "XSEC"
+  },
+  "license": "GPL-3.0-only",
+  "repository": "https://github.com/xsec-labs/xsec-plugin-jwt-analysis",
+  "interface": {
+    "displayName": "JWT 分析",
+    "shortDescription": "XSEC project-scoped JWT security analysis",
+    "longDescription": "解析 JWT、检测弱密钥并在授权基线请求上运行受限的安全测试，保留任务进度与证据。",
+    "developerName": "XSEC",
+    "category": "Security",
+    "capabilities": [
+      "XSEC Desktop",
+      "MCP Server",
+      "JWT Security Analysis"
+    ],
+    "websiteURL": "https://github.com/xsec-labs/xsec-plugin-jwt-analysis",
+    "defaultPrompt": [
+      "分析当前项目中的 JWT"
+    ],
+    "brandColor": "#4F7CFF"
+  }
+}

@@ -1,0 +1,348 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:62fd9993-1869-4d27-9db0-82ee7464aba8",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "bom-ref": "com.xsec.jwt-analysis",
+      "name": "XSEC JWT Analysis Plugin",
+      "version": "0.1.0",
+      "licenses": [
+        {
+          "expression": "GPL-3.0-only"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/xsec-labs/xsec-plugin-jwt-analysis"
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "xsec:scope",
+        "value": "bundled runtime and build dependencies"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "jwt_tool",
+      "name": "jwt_tool",
+      "version": "2.3.0",
+      "licenses": [
+        {
+          "expression": "GPL-3.0-only"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/ticarpi/jwt_tool/tree/v2.3.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "8ca48c1b5b519a583d9eafec37e3933a3c5ffc05b171422bd8ce3b742fbc0e6c"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "rockyou",
+      "name": "SecLists RockYou wordlist archive",
+      "version": "source-snapshot",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/danielmiessler/SecLists"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "47c070a029bcdb4cbd0e02c69fed136ef46dce4048ddbadf177daa5e885b8172"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "requests",
+      "name": "requests",
+      "version": "2.34.2",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/requests/2.34.2/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pycryptodomex",
+      "name": "pycryptodomex",
+      "version": "3.23.0",
+      "licenses": [
+        {
+          "expression": "BSD-2-Clause OR LicenseRef-Public-Domain"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/pycryptodomex/3.23.0/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "termcolor",
+      "name": "termcolor",
+      "version": "3.3.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/termcolor/3.3.0/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "ratelimit",
+      "name": "ratelimit",
+      "version": "2.2.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/ratelimit/2.2.1/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "urllib3",
+      "name": "urllib3",
+      "version": "2.6.3",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/urllib3/2.6.3/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "idna",
+      "name": "idna",
+      "version": "3.13",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/idna/3.13/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "certifi",
+      "name": "certifi",
+      "version": "2026.4.22",
+      "licenses": [
+        {
+          "expression": "MPL-2.0"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/certifi/2026.4.22/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "charset-normalizer",
+      "name": "charset-normalizer",
+      "version": "3.4.7",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/charset-normalizer/3.4.7/"
+        }
+      ]
+    },
+    {
+      "type": "framework",
+      "bom-ref": "pyinstaller",
+      "name": "PyInstaller",
+      "version": "6.22.3",
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later WITH LicenseRef-PyInstaller-Bootloader-Exception"
+        },
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/pyinstaller/6.22.3/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pyinstaller-hooks-contrib",
+      "name": "pyinstaller-hooks-contrib",
+      "version": "2026.7",
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later AND Apache-2.0"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/pyinstaller-hooks-contrib/2026.7/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "altgraph",
+      "name": "altgraph",
+      "version": "0.17.5",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/altgraph/0.17.5/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "packaging",
+      "name": "packaging",
+      "version": "26.2",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR BSD-2-Clause"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://pypi.org/project/packaging/26.2/"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "com.xsec.jwt-analysis",
+      "dependsOn": []
+    },
+    {
+      "ref": "jwt_tool",
+      "dependsOn": []
+    },
+    {
+      "ref": "rockyou",
+      "dependsOn": []
+    },
+    {
+      "ref": "requests",
+      "dependsOn": []
+    },
+    {
+      "ref": "pycryptodomex",
+      "dependsOn": []
+    },
+    {
+      "ref": "termcolor",
+      "dependsOn": []
+    },
+    {
+      "ref": "ratelimit",
+      "dependsOn": []
+    },
+    {
+      "ref": "urllib3",
+      "dependsOn": []
+    },
+    {
+      "ref": "idna",
+      "dependsOn": []
+    },
+    {
+      "ref": "certifi",
+      "dependsOn": []
+    },
+    {
+      "ref": "charset-normalizer",
+      "dependsOn": []
+    },
+    {
+      "ref": "pyinstaller",
+      "dependsOn": []
+    },
+    {
+      "ref": "pyinstaller-hooks-contrib",
+      "dependsOn": []
+    },
+    {
+      "ref": "altgraph",
+      "dependsOn": []
+    },
+    {
+      "ref": "packaging",
+      "dependsOn": []
+    }
+  ]
+}
