@@ -328,6 +328,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
       - name: Install macOS engine build tools
         if: ${{ matrix.shell == 'bash' && startsWith(matrix.runner, 'macos-') }}
         run: brew install meson ninja pkg-config
@@ -401,7 +404,7 @@ jobs:
           esac
           output_dir="$RUNNER_TEMP/xsec-native-sidecars"
           mkdir -p "$output_dir"
-          for sidecar_cmd in attack-path-mcp asset-discovery-mcp; do
+          for sidecar_cmd in attack-path-mcp asset-discovery-mcp browser-mcp; do
             if [ ! -d ".xsec-desktop-source/go/cmd/$sidecar_cmd" ]; then
               echo "xSecDesktop source is missing go/cmd/$sidecar_cmd; the pinned xSecDesktop commit must contain the Go sidecar packages." >&2
               exit 1
@@ -412,13 +415,39 @@ jobs:
             export CGO_ENABLED=0 GOOS="$go_os" GOARCH="$go_arch"
             go build -trimpath -o "$output_dir/attack-path-mcp" ./cmd/attack-path-mcp
             go build -trimpath -o "$output_dir/asset-discovery-mcp" ./cmd/asset-discovery-mcp
+            go build -trimpath -o "$output_dir/browser-mcp" ./cmd/browser-mcp
           )
           [ -f "$output_dir/attack-path-mcp" ] && [ ! -L "$output_dir/attack-path-mcp" ] && [ -s "$output_dir/attack-path-mcp" ]
           [ -f "$output_dir/asset-discovery-mcp" ] && [ ! -L "$output_dir/asset-discovery-mcp" ] && [ -s "$output_dir/asset-discovery-mcp" ]
+          [ -f "$output_dir/browser-mcp" ] && [ ! -L "$output_dir/browser-mcp" ] && [ -s "$output_dir/browser-mcp" ]
           chmod 0755 "$output_dir/attack-path-mcp"
           chmod 0755 "$output_dir/asset-discovery-mcp"
+          chmod 0755 "$output_dir/browser-mcp"
+          corepack enable
+          pnpm --dir .xsec-desktop-source install --frozen-lockfile
+          case "$RUST_TARGET" in
+            aarch64-apple-darwin) runtime_platform="macos-arm64" ;;
+            x86_64-apple-darwin) runtime_platform="macos-x86_64" ;;
+            x86_64-unknown-linux-gnu) runtime_platform="linux-x86_64" ;;
+            *) echo "Unsupported browser runtime target: $RUST_TARGET" >&2; exit 1 ;;
+          esac
+          runtime_deploy="$RUNNER_TEMP/xsec-browser-runtime-deps-$RUST_TARGET"
+          [ ! -e "$runtime_deploy" ] || { echo "Browser runtime staging path already exists." >&2; exit 1; }
+          pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy "$runtime_deploy"
+          runtime_root="$output_dir/browser-runtime"
+          mkdir -p "$runtime_root/node/$runtime_platform" "$runtime_root/bridge"
+          python scripts/browser_node_runtime.py --platform "$runtime_platform" --output "$runtime_root/node/$runtime_platform/node"
+          printf '%s\n' 'v22.23.2' > "$runtime_root/node-version.txt"
+          python scripts/prepare_browser_runtime.py --source-node-modules "$runtime_deploy/node_modules" --destination-node-modules "$runtime_root/node_modules"
+          cp .xsec-desktop-source/go/internal/mcpsidecar/browser/bridge/*.mjs "$runtime_root/bridge/"
+          cp .xsec-desktop-source/go/internal/infra/browser/cloak_launch.mjs "$runtime_root/bridge/"
+          runtime_node="$runtime_root/node/$runtime_platform/node"
+          [ "$("$runtime_node" --version)" = "v22.23.2" ]
+          (cd "$runtime_root" && "$runtime_node" --input-type=module -e 'await import("playwright-core"); await import("cloakbrowser")')
           cargo build --locked --release --package binary-analysis-mcp --target "$RUST_TARGET" --manifest-path .xsec-binary-analysis-source/Cargo.toml
-          cp "$CARGO_TARGET_DIR/$RUST_TARGET/release/binary-analysis-mcp" "$output_dir/binary-analysis-mcp"
+          binary_analysis_binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/binary-analysis-mcp"
+          [ -f "$binary_analysis_binary" ] && [ ! -L "$binary_analysis_binary" ] && [ -s "$binary_analysis_binary" ]
+          cp "$binary_analysis_binary" "$output_dir/binary-analysis-mcp"
           chmod 0755 "$output_dir/binary-analysis-mcp"
           python .xsec-binary-analysis-source/scripts/build_engine_bundle.py --target "$RUST_TARGET" --work-root "$RUNNER_TEMP/xsec-binary-analysis-engine-$RUST_TARGET" --output "$output_dir/binary-engine" --jobs 4
       - name: Build the reviewed native MCP sidecars
@@ -434,7 +463,7 @@ jobs:
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
-          foreach ($sidecarCmd in 'attack-path-mcp', 'asset-discovery-mcp') {
+          foreach ($sidecarCmd in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp') {
             if (-not (Test-Path -LiteralPath (Join-Path '.xsec-desktop-source\go\cmd' $sidecarCmd) -PathType Container)) {
               throw "xSecDesktop source is missing go\cmd\$sidecarCmd; the pinned xSecDesktop commit must contain the Go sidecar packages."
             }
@@ -445,14 +474,37 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Attack-path MCP build failed' }
             go build -trimpath -o (Join-Path $outputDirectory 'asset-discovery-mcp') ./cmd/asset-discovery-mcp
             if ($LASTEXITCODE -ne 0) { throw 'Asset-discovery MCP build failed' }
+            go build -trimpath -o (Join-Path $outputDirectory 'browser-mcp') ./cmd/browser-mcp
+            if ($LASTEXITCODE -ne 0) { throw 'Browser MCP build failed' }
           }
           finally { Pop-Location }
-          if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory 'attack-path-mcp') -PathType Leaf)) { throw 'Attack-path MCP binary is unavailable' }
-          if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory 'asset-discovery-mcp') -PathType Leaf)) { throw 'Asset-discovery MCP binary is unavailable' }
-          cargo build --locked --release --package binary-analysis-mcp --target $env:RUST_TARGET --manifest-path .xsec-binary-analysis-source\Cargo.toml
-          $binaryAnalysisBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET\release\binary-analysis-mcp.exe"
+          foreach ($name in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp') {
+            if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory $name) -PathType Leaf)) { throw "$name binary is unavailable" }
+          }
+          corepack enable
+          pnpm --dir .xsec-desktop-source install --frozen-lockfile
+          $runtimeDeploy = Join-Path $env:RUNNER_TEMP "xsec-browser-runtime-deps-$env:RUST_TARGET"
+          if (Test-Path -LiteralPath $runtimeDeploy) { throw 'Browser runtime staging path already exists' }
+          pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy $runtimeDeploy
+          $runtimeRoot = Join-Path $outputDirectory 'browser-runtime'
+          New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'node\windows-x86_64') -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'bridge') -Force | Out-Null
+          python scripts/browser_node_runtime.py --platform windows-x86_64 --output (Join-Path $runtimeRoot 'node\windows-x86_64\node.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned browser Node runtime preparation failed' }
+          Set-Content -LiteralPath (Join-Path $runtimeRoot 'node-version.txt') -Value 'v22.23.2' -NoNewline -Encoding ascii
+          python scripts/prepare_browser_runtime.py --source-node-modules (Join-Path $runtimeDeploy 'node_modules') --destination-node-modules (Join-Path $runtimeRoot 'node_modules')
+          if ($LASTEXITCODE -ne 0) { throw 'Locked browser Node dependencies could not be materialized' }
+          Get-ChildItem -LiteralPath .xsec-desktop-source\go\internal\mcpsidecar\browser\bridge -Filter '*.mjs' -File | Copy-Item -Destination (Join-Path $runtimeRoot 'bridge')
+          Copy-Item -LiteralPath .xsec-desktop-source\go\internal\infra\browser\cloak_launch.mjs -Destination (Join-Path $runtimeRoot 'bridge')
+          $runtimeNode = Join-Path $runtimeRoot 'node\windows-x86_64\node.exe'
+          if ((& $runtimeNode --version) -ne 'v22.23.2') { throw 'Packed browser Node version mismatch' }
+          Push-Location $runtimeRoot
+          try { & $runtimeNode --input-type=module -e 'await import("playwright-core"); await import("cloakbrowser")'; if ($LASTEXITCODE -ne 0) { throw 'Packed browser Node dependencies are not loadable' } }
+          finally { Pop-Location }
+          cargo build --locked --release --package binary-analysis-mcp --target $env:RUST_TARGET --manifest-path .xsec-binary-analysis-source/Cargo.toml
+          $binaryAnalysisBinary = Join-Path $env:CARGO_TARGET_DIR "$env:RUST_TARGET/release/binary-analysis-mcp.exe"
           if (-not (Test-Path -LiteralPath $binaryAnalysisBinary -PathType Leaf)) { throw 'Binary-analysis MCP binary is unavailable' }
-          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp.exe')
+          Copy-Item -LiteralPath $binaryAnalysisBinary -Destination (Join-Path $outputDirectory 'binary-analysis-mcp')
       - name: Build the Windows binary-analysis engine bundle
         if: ${{ matrix.shell == 'pwsh' }}
         shell: msys2 {0}
@@ -892,6 +944,14 @@ jobs:
                 exit 1
               }
               native_inputs+=("--native-sidecar-input" "$native_plugin@$target=$binary")
+              if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then
+                runtime="$sidecar_root/xsec-native-sidecars-$target/browser-runtime"
+                [ -d "$runtime" ] && [ ! -L "$runtime" ] || {
+                  echo "Protected builder did not provide a browser runtime for $target." >&2
+                  exit 1
+                }
+                native_inputs+=("--packed-runtime-input" "$native_plugin@$target=$runtime")
+              fi
               if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then
                 runtime="$sidecar_root/xsec-native-sidecars-$target/binary-engine"
                 [ -d "$runtime" ] && [ ! -L "$runtime" ] || {
