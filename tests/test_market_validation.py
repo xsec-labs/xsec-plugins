@@ -2360,7 +2360,20 @@ export function renderPlaceholder() {}
         self.assertIn("./cmd/attack-path-mcp", sidecar_job)
         self.assertIn("./cmd/asset-discovery-mcp", sidecar_job)
         self.assertIn("xsec-native-sidecars-${{ matrix.rust_target }}", sidecar_job)
-        self.assertIn('for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis', steps)
+        self.assertIn(
+            'for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser '
+            'com.xsec.binary-analysis com.xsec.jwt-analysis; do',
+            steps,
+        )
+        # A native plugin without a discovery entry has not been published
+        # yet: it must be skipped before the retained-Beta or fresh-input
+        # branches, or no first publication can start.
+        unlisted_guard = "jq -e --arg id \"$native_plugin\" '.plugins | any(.name == $id)' .agents/plugins/marketplace.json"
+        self.assertIn(unlisted_guard, steps)
+        self.assertLess(
+            steps.index(unlisted_guard),
+            steps.index('if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then'),
+        )
         self.assertIn('$native_plugin@$target=$binary', steps)
         self.assertIn('--packed-runtime-input', steps)
         self.assertIn('binary-engine', steps)
