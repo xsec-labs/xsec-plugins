@@ -1153,7 +1153,7 @@ jobs:
         run: |
           set -euo pipefail
           # Stage Factory provenance and the already-indexed first-party Gitlink.
-          git add -A .agents/plugins .xsec-factory
+          python scripts/stage_factory_output.py .agents/plugins .xsec-factory
           if git diff --cached --quiet; then
             echo "marketplace_revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
             echo "published=false" >> "$GITHUB_OUTPUT"

@@ -670,7 +670,7 @@ jobs:
           [ -n "$GH_TOKEN" ] || { echo "XSEC_MARKETPLACE_PUBLISH_TOKEN is not configured." >&2; exit 1; }
           [[ "$DELIVERY_KEY" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$ ]] || { echo "Factory delivery key is invalid." >&2; exit 1; }
           [[ "$TRIGGER_LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$ ]] || { echo "Factory trigger label is invalid." >&2; exit 1; }
-          git add -A .agents/plugins .xsec-factory plugins
+          python scripts/stage_factory_output.py .agents/plugins .xsec-factory plugins
           git diff --cached --quiet && { echo "Current batch was not staged." >&2; exit 1; }
           git config user.name "xsec-marketplace[bot]"
           git config user.email "xsec-marketplace[bot]@users.noreply.github.com"
