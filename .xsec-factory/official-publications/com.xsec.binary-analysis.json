@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.binary-analysis",
+  "events": [
+    {
+      "channel": "beta",
+      "releaseId": "sha256-43bdfc0e48b61c01acb614954d7e78fbfe38394ed5a0642f173c054b8859ca87",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-binary-analysis",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "fff4cb5abf9da47206668e39bd72c742eb13e294"
+      },
+      "artifact": {
+        "sha256": "21cb55696505a740e1c51b1a6a48578d1b3372b48222be4ba7dd7384ed7aaee2",
+        "url": "artifacts/com.xsec.binary-analysis-0.1.0-sha256-21cb55696505a740-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
+    }
+  ]
+}

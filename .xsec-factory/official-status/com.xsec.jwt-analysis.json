@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.jwt-analysis",
+  "trustTier": "first-party",
+  "source": {
+    "repository": "xsec-labs/xsec-plugin-jwt-analysis",
+    "path": ".",
+    "refs": {
+      "beta": "refs/heads/beta",
+      "stable": "refs/heads/main"
+    },
+    "betaSha": "015854114a66ae0ac11ccbf2ccfb2af648f0e30b",
+    "stableSha": null,
+    "mainGateSha": "e57d699c8f3b0230256236b131e3a24d41147e08"
+  },
+  "release": {
+    "betaReleaseId": "sha256-0459abf9aea1dc38f7ec43087fcadf114b3a168a6f595f71e52eec9fdfd60755",
+    "stableReleaseId": null
+  },
+  "publication": {
+    "state": "waiting_for_beta",
+    "deliveryId": "batch-43219574364.1",
+    "factoryRunUrl": "https://github.com/xsec-labs/xsec-plugins/actions/runs/43219574364",
+    "smokeRunUrl": null,
+    "marketplaceRevision": null
+  }
+}

@@ -1,0 +1,49 @@
+name: Build JWT Analysis Sidecar
+
+on:
+  push:
+    branches: [main, beta]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: macos-arm64
+            runner: macos-15
+            executable: jwt-analysis-mcp
+          - target: macos-x86_64
+            runner: macos-15-intel
+            executable: jwt-analysis-mcp
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+            executable: jwt-analysis-mcp
+          - target: windows-x86_64
+            runner: windows-2025
+            executable: jwt-analysis-mcp.exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-build.lock
+      - run: python -m pip install --disable-pip-version-check -r requirements-build.lock
+      - run: python scripts/verify_package.py
+      - run: python tests/self_check.py
+      - run: mkdir -p dist
+        shell: bash
+      - run: python scripts/build_sidecar.py --output dist/${{ matrix.executable }}
+      - run: python scripts/verify_sidecar.py dist/${{ matrix.executable }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jwt-analysis-${{ matrix.target }}
+          path: dist/${{ matrix.executable }}
+          if-no-files-found: error

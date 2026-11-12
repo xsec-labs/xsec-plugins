@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.jwt-analysis",
+  "events": [
+    {
+      "channel": "beta",
+      "releaseId": "sha256-0459abf9aea1dc38f7ec43087fcadf114b3a168a6f595f71e52eec9fdfd60755",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-jwt-analysis",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "015854114a66ae0ac11ccbf2ccfb2af648f0e30b"
+      },
+      "artifact": {
+        "sha256": "cdfe7da27ec6e646d2545226f1d107eb20d0267354b4f4f7721b2b454fe66651",
+        "url": "artifacts/com.xsec.jwt-analysis-1.0.0-sha256-cdfe7da27ec6e646-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.browser",
+  "trustTier": "first-party",
+  "source": {
+    "repository": "xsec-labs/xsec-plugin-browser",
+    "path": ".",
+    "refs": {
+      "beta": "refs/heads/beta",
+      "stable": "refs/heads/main"
+    },
+    "betaSha": "312a5733198ff707a44d15b962fbb0e7d23fe0fc",
+    "stableSha": null,
+    "mainGateSha": "312a5733198ff707a44d15b962fbb0e7d23fe0fc"
+  },
+  "release": {
+    "betaReleaseId": "sha256-6d181efdf3325ea489ddc568b93ffb56666151503be9c88a08dfd6cd942d5fe9",
+    "stableReleaseId": null
+  },
+  "publication": {
+    "state": "waiting_for_smoke",
+    "deliveryId": "batch-43219574364.1",
+    "factoryRunUrl": "https://github.com/xsec-labs/xsec-plugins/actions/runs/43219574364",
+    "smokeRunUrl": null,
+    "marketplaceRevision": null
+  }
+}

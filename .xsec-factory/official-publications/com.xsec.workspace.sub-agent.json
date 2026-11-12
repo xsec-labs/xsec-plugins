@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.sub-agent",
+  "events": [
+    {
+      "channel": "beta",
+      "releaseId": "sha256-bca01e23377a6fbee3e8d3d3c0b62e146d688110a8d63c054ee43ee5abf888f9",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-sub-agent",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "83a5d13b4b269387c5dbf37df2eff2788b69f7e3"
+      },
+      "artifact": {
+        "sha256": "0e24d5113c208b45e1f27edebe48de4e17899b305b4064420ec8b7f4f5e139d2",
+        "url": "artifacts/com.xsec.workspace.sub-agent-2.0.0-sha256-0e24d5113c208b45-any-any.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "com.xsec.workspace.project-outcomes", "version": "2.0.0", "description": "XSEC project-outcome workspace tools", "author": { "name": "XSEC" }, "license": "MIT",
+  "extensions": { "com.xsec.desktop": {
+    "schemaVersion": 2, "displayName": "项目成果", "publisher": "XSEC", "icon": "package-open",
+    "engines": { "xsec": ">=0.1.0", "pluginApi": "^1.3.0" }, "entrypoints": { "frontend": "./com.xsec.desktop/frontend/index.js" },
+    "activationEvents": ["onWorkspaceTool:project-outcomes", "onWorkspaceTool:finding-detail", "onWorkspaceTool:report-detail", "onWorkspaceTool:task-detail", "onWorkspaceTool:evidence-detail"],
+    "permissions": { "workspace.project.read": {}, "workspace.session.read": {}, "workspace.session.write": {}, "workspace.tool.open": {} },
+    "frontendApi": { "version": 2, "module": "single-esm", "methods": {
+      "xsec.outcomes.list": { "capability": "workspace.project.read", "binding": "context" },
+      "xsec.outcomes.get": { "capability": "workspace.project.read", "binding": "context" },
+      "xsec.outcomes.resolve": { "capability": "workspace.project.read", "binding": "context" },
+      "xsec.outcomes.task.get": { "capability": "workspace.project.read", "binding": "context" },
+      "xsec.outcomes.evidence.list": { "capability": "workspace.project.read", "binding": "context" },
+      "xsec.outcomes.reference.add": { "capability": "workspace.session.write", "binding": "context" },
+      "xsec.workspace.tool.open": { "capability": "workspace.tool.open", "binding": "context" }
+    } },
+    "contributes": { "workspaceTools": {
+      "project-outcomes": { "title": "项目成果", "icon": "package-open", "scope": "project", "launchable": true, "policy": "singleton", "surface": "standard", "retain": "active", "preferredSideWidth": 480, "preferredBottomHeight": 380, "surfaces": ["interactive-dock", "batch-observe"], "capabilities": ["outcomes.read"] },
+      "finding-detail": { "title": "漏洞详情", "icon": "bug", "scope": "entity", "launchable": false, "policy": "entity-singleton", "surface": "standard", "retain": "active", "preferredSideWidth": 480, "preferredBottomHeight": 360, "surfaces": ["interactive-dock", "batch-observe"] },
+      "report-detail": { "title": "报告详情", "icon": "file-text", "scope": "entity", "launchable": false, "policy": "entity-singleton", "surface": "standard", "retain": "active", "preferredSideWidth": 480, "preferredBottomHeight": 360, "surfaces": ["interactive-dock", "batch-observe"] },
+      "task-detail": { "title": "任务详情", "icon": "wrench", "scope": "entity", "launchable": false, "policy": "entity-singleton", "surface": "standard", "retain": "active", "preferredSideWidth": 480, "preferredBottomHeight": 360, "surfaces": ["interactive-dock"] },
+      "evidence-detail": { "title": "证据详情", "icon": "file-search", "scope": "entity", "launchable": false, "policy": "entity-singleton", "surface": "standard", "retain": "active", "preferredSideWidth": 480, "preferredBottomHeight": 360, "surfaces": ["interactive-dock", "batch-observe"] }
+    } }
+  } }
+}

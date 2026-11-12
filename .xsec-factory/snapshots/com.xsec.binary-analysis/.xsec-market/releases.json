@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 2,
+  "pluginId": "com.xsec.binary-analysis",
+  "releases": [
+    {
+      "releaseId": "sha256-43bdfc0e48b61c01acb614954d7e78fbfe38394ed5a0642f173c054b8859ca87",
+      "version": "0.1.0",
+      "engines": {
+        "xsec": ">=0.1.0",
+        "pluginApi": "^1.5.0"
+      },
+      "artifacts": [
+        {
+          "os": "macos",
+          "arch": "aarch64",
+          "url": "artifacts/com.xsec.binary-analysis-0.1.0-sha256-21cb55696505a740-macos-aarch64.xsec-plugin",
+          "sha256": "21cb55696505a740e1c51b1a6a48578d1b3372b48222be4ba7dd7384ed7aaee2"
+        },
+        {
+          "os": "macos",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.binary-analysis-0.1.0-sha256-33c3bcd883d7a713-macos-x86_64.xsec-plugin",
+          "sha256": "33c3bcd883d7a71309647ea70020da23ed6b87fe470c6c37403d4d5a05b069bc"
+        },
+        {
+          "os": "linux",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.binary-analysis-0.1.0-sha256-17771e4355dfb8d6-linux-x86_64.xsec-plugin",
+          "sha256": "17771e4355dfb8d6d415533b3b3560534e3dbae4d6fd7bc8227ee6494c46727d"
+        },
+        {
+          "os": "windows",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.binary-analysis-0.1.0-sha256-e33a19c5fc7bbbe7-windows-x86_64.xsec-plugin",
+          "sha256": "e33a19c5fc7bbbe7f5e637950d223721b532c2e26d10af44f86ef4ce3d561410"
+        }
+      ],
+      "nativeSidecarProvenance": {
+        "source": {
+          "repository": "xsec-labs/xsec-plugin-binary-analysis",
+          "revision": "fff4cb5abf9da47206668e39bd72c742eb13e294"
+        },
+        "targetMatrixVersion": 2,
+        "targets": [
+          {
+            "rustTarget": "aarch64-apple-darwin",
+            "os": "macos",
+            "arch": "aarch64",
+            "sha256": "1406a3f700786f5f2fe6dd20fbeef942716569c48dfe68065324973cafff5703",
+            "runtimeManifestSha256": "8cc5c8ad08edee0dc597ba9b84721e8761a856b816e0cdeb4d6a33c4c6f34acc"
+          },
+          {
+            "rustTarget": "x86_64-apple-darwin",
+            "os": "macos",
+            "arch": "x86_64",
+            "sha256": "1a34bc2e2ac8b0a77a17732a10c3e57576357fcdd4585af49d2c1f35ae5b2afc",
+            "runtimeManifestSha256": "0cad87b27662d4350438d69fce6306a2448ac7ce9d73a235f7d8d864580ee7a6"
+          },
+          {
+            "rustTarget": "x86_64-unknown-linux-gnu",
+            "os": "linux",
+            "arch": "x86_64",
+            "sha256": "7630973e31d9db9620d50d6ad06224ba45841bf4f075c138c5e711f35bcc27f9",
+            "runtimeManifestSha256": "96ed1ff63c80d1f469d84229ed381d7376b195938bcf32b57a792375db3ece3f"
+          },
+          {
+            "rustTarget": "x86_64-pc-windows-msvc",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "db21811f0a1ea047fdb5318ae42ee5a36d6aaa052eb46c0fb9d994687c7331ec",
+            "runtimeManifestSha256": "5f7677a7045d24525f21c7306a863a20965c0758a309cabc48eeb9b4adcf9e1d"
+          }
+        ]
+      }
+    }
+  ],
+  "channels": {
+    "beta": {
+      "releaseId": "sha256-43bdfc0e48b61c01acb614954d7e78fbfe38394ed5a0642f173c054b8859ca87"
+    },
+    "stable": null
+  }
+}

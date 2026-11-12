@@ -1,0 +1,1 @@
+"""XSEC JWT analysis Sidecar."""

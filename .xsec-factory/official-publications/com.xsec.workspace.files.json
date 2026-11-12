@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.files",
+  "events": [
+    {
+      "channel": "beta",
+      "releaseId": "sha256-7c467ccbb8471993d02ed63916100be914091cef49a6480e5990b5308b06b8a0",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-files",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "0981c9e56b4fc5bbcc4c733bb6f6ec597d8b8138"
+      },
+      "artifact": {
+        "sha256": "49f5bba2a9a0e69ae8812894ed5af96640690a77223338c3c2a57166ecdc010c",
+        "url": "artifacts/com.xsec.workspace.files-2.0.0-sha256-49f5bba2a9a0e69a-any-any.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
+    }
+  ]
+}
