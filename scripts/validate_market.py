@@ -236,6 +236,21 @@ APPROVALS_FRONTEND_SOURCE_SHA256_BY_VERSION = {
     "2.0.0": "863a044877a3f2600f67cac69bff084e6d6a36f1aee6e6fc599abdaa8192021e",
     "2.0.1": "ee1eb068a2f67275a41a208fe49d0634055804a4d144440d72092dac34b410c0",
 }
+# Bundled UI libraries schedule frames with ``frame.request(callback)``. A
+# callback passed by name cannot be told apart from a host alias called with a
+# method variable without scope analysis, so only these reviewed frontend
+# sources (normalized as for approvals) may pass a lone name to a non-host
+# ``request``. Every other frontend may pass only an inline arrow function.
+REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256 = {
+    # asset-discovery 2.1.2 (Beta 451c027) and 2.2.0 (main f6a82cc): Base UI's
+    # AnimationFrame scheduler; every named-callback receiver is bound from
+    # useAnimationFrame(), AnimationFrame.create() or new Scheduler.
+    "com.xsec.asset-discovery": frozenset(
+        {"0447e074384cc8f8c5c7df60010c447d744c38f2654ee7702fb0723235788822"}
+    ),
+}
+
+
 class MarketplaceValidationError(ValueError):
     """A marketplace invariant was not met."""
 
@@ -2734,16 +2749,22 @@ def frontend_bound_names(dense: list[tuple[str, str]]) -> tuple[set[str], set[st
 
 
 def frontend_request_is_callback_scheduler(
-    dense: list[tuple[str, str]], access: int, bound_names: tuple[set[str], set[str]]
+    dense: list[tuple[str, str]],
+    access: int,
+    bound_names: tuple[set[str], set[str]],
+    *,
+    named_callbacks: bool = False,
 ) -> bool:
     """Whether ``receiver.request(callback)`` schedules a callback, not an RPC.
 
     Bundled UI libraries expose frame schedulers such as
     ``AnimationFrame.request(() => ...)`` or ``frame.request(exec)``. A host
-    RPC names its method first, so a call whose first argument is a function
-    or a lone callback name that is never bound to a string cannot request
-    one. The receiver must be a plain name that is neither ``host`` nor bound
-    to it; computed, called and forwarded receivers stay unresolved.
+    RPC names its method first, and an inline arrow function never names one,
+    so ``x.request(() => ...)`` cannot request an RPC whatever ``x`` is. A
+    lone callback name could be a method variable passed to an aliased host,
+    so it is accepted only for a reviewed frontend (``named_callbacks``). The
+    receiver must be a plain name that is neither ``host`` nor bound to it;
+    computed, called and forwarded receivers stay unresolved.
     """
 
     string_names, host_names = bound_names
@@ -2757,19 +2778,29 @@ def frontend_request_is_callback_scheduler(
     if access + 2 >= len(dense) or dense[access + 1] != ("punctuation", "("):
         return False
     first = dense[access + 2]
-    if first == ("identifier", "function") or first == ("identifier", "async"):
-        return True
     if first == ("punctuation", "("):
+        # ``(params) => body``; an invoked ``(...)()`` is not followed by ``=>``.
         closing = matching_parenthesis(dense, access + 2)
         return closing is not None and dense[closing + 1:closing + 3] == [("punctuation", "="), ("punctuation", ">")]
-    if first[0] != "identifier" or first[1] == "host" or first[1] in string_names:
+    if first[0] != "identifier" or first[1] in {"host", "function", "async"}:
         return False
     following = dense[access + 3:access + 5]
-    return following[:1] == [("punctuation", ")")] or following == [("punctuation", "="), ("punctuation", ">")]
+    if following == [("punctuation", "="), ("punctuation", ">")]:
+        return True
+    return named_callbacks and first[1] not in string_names and following[:1] == [("punctuation", ")")]
+
+
+def frontend_source_has_reviewed_callback_schedulers(manifest: dict[str, object], source: str) -> bool:
+    plugin_id = manifest.get("name")
+    reviewed = REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256.get(plugin_id) if isinstance(plugin_id, str) else None
+    if not reviewed:
+        return False
+    normalized = source.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest() in reviewed
 
 
 def frontend_host_request_calls(
-    dense: list[tuple[str, str]], label: str
+    dense: list[tuple[str, str]], label: str, *, named_callbacks: bool = False
 ) -> list[tuple[int, int, int]]:
     pairs = javascript_parenthesis_pairs(dense)
     if frontend_has_dynamic_host_member(dense, pairs):
@@ -2782,7 +2813,11 @@ def frontend_host_request_calls(
     if unresolved:
         bound_names = frontend_bound_names(dense)
         unresolved = {
-            access for access in unresolved if not frontend_request_is_callback_scheduler(dense, access, bound_names)
+            access
+            for access in unresolved
+            if not frontend_request_is_callback_scheduler(
+                dense, access, bound_names, named_callbacks=named_callbacks
+            )
         }
     if unresolved:
         fail(f"{label} contains a host RPC request through an unresolved receiver")
@@ -2812,7 +2847,9 @@ def frontend_request_methods(
     return None
 
 
-def frontend_host_requests(tokens: list[tuple[str, str]], label: str) -> set[str]:
+def frontend_host_requests(
+    tokens: list[tuple[str, str]], label: str, *, named_callbacks: bool = False
+) -> set[str]:
     dense = [token for token in tokens if token[0] != "newline"]
     if frontend_host_binding_is_unstable(tokens):
         fail(f"{label} cannot prove the activation host broker contract")
@@ -2821,7 +2858,7 @@ def frontend_host_requests(tokens: list[tuple[str, str]], label: str) -> set[str
     proof = (frontend_rpc_bindings(dense), frontend_binding_counts(dense))
     reachable = frontend_reachable_token_indices(tokens)
     source_indices = [index for index, token in enumerate(tokens) if token[0] != "newline"]
-    calls = frontend_host_request_calls(dense, label)
+    calls = frontend_host_request_calls(dense, label, named_callbacks=named_callbacks)
     requested: set[str] = set()
     for receiver, argument, _ in calls:
         methods = frontend_request_methods(dense, argument, proof)
@@ -2843,11 +2880,11 @@ def frontend_host_requests(tokens: list[tuple[str, str]], label: str) -> set[str
 
 
 def validate_frontend_host_requests(
-    methods: dict[str, object], tokens: list[tuple[str, str]], label: str
+    methods: dict[str, object], tokens: list[tuple[str, str]], label: str, *, named_callbacks: bool = False
 ) -> set[str]:
     """Validate reachable broker calls and return their declared method names."""
 
-    requested = frontend_host_requests(tokens, label)
+    requested = frontend_host_requests(tokens, label, named_callbacks=named_callbacks)
     undeclared = requested - set(methods)
     if undeclared:
         fail(f"{label} calls undeclared host RPC methods: {sorted(undeclared)}")
@@ -2949,13 +2986,19 @@ def validate_official_frontend(manifest: dict[str, object], source: str, label: 
         # validate_approvals_frontend pins the exact reviewed approvals source
         # instead of proving reachability, so its class-based pages need not
         # fit the object-literal lifecycle proof below.
+        validate_approvals_frontend(manifest, source, label)
         return
     if not frontend_has_executable_lifecycle(tokens, activation):
         fail(f"{label} must return executable mount/update/dispose lifecycle methods")
     if manifest.get("name") == TRAFFIC_PLUGIN_ID:
         validate_traffic_frontend(manifest, source, label)
         return
-    requested = validate_frontend_host_requests(methods, tokens, label)
+    requested = validate_frontend_host_requests(
+        methods,
+        tokens,
+        label,
+        named_callbacks=frontend_source_has_reviewed_callback_schedulers(manifest, source),
+    )
     validate_frontend_rpc_literals(methods, tokens, label, requested)
 
 

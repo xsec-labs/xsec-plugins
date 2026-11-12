@@ -1039,18 +1039,23 @@ class MarketplaceValidationTests(unittest.TestCase):
             validate_market.frontend_host_requests(tokens, "frontend")
 
     def test_frontend_accepts_bundled_callback_schedulers_named_request(self) -> None:
-        """UI libraries schedule frames with ``x.request(callback)``, which is not an RPC."""
+        """UI libraries schedule frames with ``x.request(() => ...)``, which is not an RPC."""
 
-        source = (
-            "class AnimationFrame{static request(fn){return scheduler.request(fn)}}"
-            "const frame=new AnimationFrame;function lockScroll(){}"
-            "export function activate(host){"
-            "AnimationFrame.request(()=>{});frame.request(lockScroll);"
-            "frame.request(function(){});frame.request(async()=>{});"
-            'host.request("xsec.good",{})}'
-        )
-        tokens = validate_market.javascript_contract_tokens(source, "frontend")
+        prefix = "const frame=new AnimationFrame;function lockScroll(){}export function activate(host){"
+        suffix = 'host.request("xsec.good",{})}'
+        inline = prefix + "AnimationFrame.request(()=>{});frame.request((time)=>lockScroll(time));frame.request(time=>{});" + suffix
+        tokens = validate_market.javascript_contract_tokens(inline, "frontend")
         self.assertEqual(validate_market.frontend_host_requests(tokens, "frontend"), {"xsec.good"})
+
+        # A callback passed by name is accepted only for a reviewed frontend source.
+        named = prefix + "frame.request(lockScroll);" + suffix
+        tokens = validate_market.javascript_contract_tokens(named, "frontend")
+        with self.assertRaisesRegex(MarketplaceValidationError, "unresolved receiver"):
+            validate_market.frontend_host_requests(tokens, "frontend")
+        self.assertEqual(
+            validate_market.frontend_host_requests(tokens, "frontend", named_callbacks=True),
+            {"xsec.good"},
+        )
 
     def test_frontend_callback_scheduler_exemption_keeps_rpc_shaped_calls_unresolved(self) -> None:
         cases = (
@@ -1063,6 +1068,15 @@ class MarketplaceValidationTests(unittest.TestCase):
             "owner.frame.request(()=>{})",
             "frame().request(()=>{})",
             "frame.request(host)",
+            # Host aliases the token scan cannot see, called with a method variable.
+            'function relay(b,m){return b.request(m)}relay(host,"xsec.workspace.secrets.read")',
+            'const [broker]=[host];const method=["xsec.workspace.secrets.read"][0];broker.request(method)',
+            'const b=(host);const m=["xsec.bad"][0];b.request(m)',
+            'const o={h:host};const b=o.h;const m=["xsec.bad"][0];b.request(m)',
+            # Function literals count only when they are not invoked.
+            'broker.request(function(){return "xsec.bad"}(),{})',
+            'broker.request(async function(){},{})',
+            'broker.request((()=>"xsec.bad")(),{})',
         )
         for body in cases:
             with self.subTest(body=body):
@@ -1070,6 +1084,25 @@ class MarketplaceValidationTests(unittest.TestCase):
                 tokens = validate_market.javascript_contract_tokens(source, "frontend")
                 with self.assertRaisesRegex(MarketplaceValidationError, "unresolved receiver"):
                     validate_market.frontend_host_requests(tokens, "frontend")
+
+    def test_frontend_named_scheduler_callbacks_require_a_reviewed_source(self) -> None:
+        plugin_id = "com.xsec.asset-discovery"
+        reviewed = validate_market.REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256[plugin_id]
+        source = 'export function activate(host){frame.request(exec);host.request("xsec.good",{})}'
+        manifest = {"name": plugin_id}
+        self.assertFalse(validate_market.frontend_source_has_reviewed_callback_schedulers(manifest, source))
+        digest = hashlib.sha256(source.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+        with patch.dict(
+            validate_market.REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256,
+            {plugin_id: reviewed | {digest}},
+        ):
+            self.assertTrue(validate_market.frontend_source_has_reviewed_callback_schedulers(manifest, source))
+            self.assertTrue(
+                validate_market.frontend_source_has_reviewed_callback_schedulers(manifest, source.replace("\n", "\r\n"))
+            )
+            self.assertFalse(
+                validate_market.frontend_source_has_reviewed_callback_schedulers({"name": "com.xsec.other"}, source)
+            )
 
     def test_frontend_rejects_noncanonical_parenthesized_and_alias_receivers(self) -> None:
         cases = (

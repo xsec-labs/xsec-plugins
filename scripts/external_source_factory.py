@@ -735,7 +735,7 @@ def adoption_path(root: Path, plugin_id: str) -> Path:
 
 
 def first_party_fresh(root: Path, registration: Registration) -> bool:
-    """Whether an active first-party plugin was first published by this Factory.
+    """Whether a first-party plugin was first published by this Factory.
 
     A first-party plugin split out of Desktop starts from a signed adoption of
     its legacy release history. A first-party plugin with no legacy history
@@ -743,9 +743,11 @@ def first_party_fresh(root: Path, registration: Registration) -> bool:
     must be covered by append-only Factory publication evidence, which the
     callers then require. Any adoption file, signed or not, keeps the adoption
     rules, and the trusted-baseline gate refuses to drop an adoption later.
+    A fresh plugin stays fresh when it is disabled, so it can be withdrawn;
+    only a pending adoption always follows the adoption rules.
     """
 
-    if registration.trust_tier != "first-party" or registration.status != "active":
+    if registration.trust_tier != "first-party" or registration.status == "pending-adoption":
         return False
     adoption = adoption_path(root, registration.plugin_id)
     sidecar = root / ADOPTION_PROOFS_RELATIVE_PATH / f"{safe_plugin_id(registration.plugin_id)}.json"
@@ -1200,7 +1202,7 @@ def update_marketplace_entry(root: Path, registration: Registration) -> None:
         # looking structurally like an external entry is not ownership: that
         # would allow a later registry edit to replace another publisher's
         # snapshot below the same local path.
-        if registration.trust_tier == "first-party":
+        if registration.trust_tier == "first-party" and not first_party_fresh(root, registration):
             # stage_beta already validated the prior snapshot/adoption before
             # replacing it.  At this point the new source has not yet been
             # packaged, so re-validating the old beta artifact against the
@@ -1787,6 +1789,9 @@ def check_main_rebuild(root: Path, plugin_id: str, source_root: Path) -> dict[st
     if not isinstance(beta_release_id, str) or not RELEASE_ID_PATTERN.fullmatch(beta_release_id):
         fail("external beta release pointer is unavailable")
     if registration.plugin_id not in RECIPES and current_beta.get("nativeSidecarProvenance") is None:
+        # A malformed main still fails closed before it can be reported as
+        # an ordinary release-ordering state.
+        source_manifest(source_dir, registration)
         try:
             unbuildable_native_main = source_declares_native_sidecar_contract(source_dir, registration.plugin_id)
         except ValueError as error:
@@ -3821,8 +3826,9 @@ def validate_registry_and_snapshots(
                 fail(
                     f"disabled official Factory plugin {registration.plugin_id} must retain its immutable snapshot and release history"
                 )
-            if registration.trust_tier == "external" and (not evidence.is_file() or is_link(evidence)):
-                fail(f"disabled external official plugin {registration.plugin_id} must retain publication evidence")
+            evidence_owned = registration.trust_tier == "external" or first_party_fresh(root, registration)
+            if evidence_owned and (not evidence.is_file() or is_link(evidence)):
+                fail(f"disabled official plugin {registration.plugin_id} must retain publication evidence")
         elif entry is None:
             if snapshot.exists() or evidence.exists() or proof.exists() or is_link(proof):
                 fail(f"active external official plugin {registration.plugin_id} has an incomplete publication")
@@ -3855,9 +3861,12 @@ def validate_registry_and_snapshots(
             if require_publication_proofs:
                 validate_publication_proof(root, registration)
         else:
-            # A first-party entry starts from a signed adoption, preserving
-            # its historical release record/artifacts and existing pointers.
-            # It is not allowed to self-authorise by adding a registry row.
+            # A split first-party entry starts from a signed adoption,
+            # preserving its historical release record/artifacts and existing
+            # pointers. A first-party row with no adoption (first_party_fresh)
+            # is trusted like an external row: on its reviewed Registry PR
+            # plus Factory publication evidence for every release, checked
+            # below; validate_adoption returns early for it.
             validate_adoption(
                 root,
                 registration,

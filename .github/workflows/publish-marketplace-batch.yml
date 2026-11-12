@@ -243,10 +243,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          output_dir="$RUNNER_TEMP/xsec-native-sidecars"
+          temp_root="$RUNNER_TEMP"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # D:/a/_temp works both in Git Bash and for native Python.
+            temp_root="$(cygpath -m "$RUNNER_TEMP")"
+          fi
+          output_dir="$temp_root/xsec-native-sidecars"
           mkdir -p "$output_dir"
-          venv="$RUNNER_TEMP/xsec-jwt-analysis-build-env"
-          dist="$RUNNER_TEMP/xsec-jwt-analysis-dist"
+          venv="$temp_root/xsec-jwt-analysis-build-env"
+          dist="$temp_root/xsec-jwt-analysis-dist"
           [ ! -e "$venv" ] && [ ! -e "$dist" ] || { echo "JWT-analysis build paths already exist." >&2; exit 1; }
           python -m venv "$venv"
           if [ "$RUNNER_OS" = "Windows" ]; then

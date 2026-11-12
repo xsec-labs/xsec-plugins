@@ -2402,6 +2402,73 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             shutil.copytree(root, baseline)
             factory.validate_registry_and_snapshots(root, baseline_root=baseline)
 
+    def test_fresh_first_party_accepts_its_next_beta(self) -> None:
+        """Later batches restage every active plugin; a fresh plugin must not need an adoption."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-first-party-fresh-next-") as directory:
+            workspace = Path(directory)
+            root = workspace / "factory"
+            plugin_id = "com.xsec.workspace.sub-agent"
+            self.make_factory(root, self.first_party_entry(status="active"))
+            source = self.make_first_party_source(workspace)
+            self.publish_fresh_first_party_beta(root, source)
+            baseline = workspace / "baseline"
+            shutil.copytree(root, baseline)
+
+            manifest_path = source / "plugin.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["version"] = "1.0.1"
+            write_json(manifest_path, manifest)
+            (source / "frontend.js").write_text("export function activate() { return 'next'; }\n", encoding="utf-8")
+            next_sha = "c" * 40
+            factory.stage_beta(root, plugin_id, source)
+            snapshot = snapshot_dir(root, plugin_id)
+            build_market.build_plugin(snapshot, snapshot)
+            factory.record_beta(root, plugin_id, next_sha, "test-publisher")
+            write_publication_proof(root, plugin_id, source_revision=next_sha)
+            factory.record_status(
+                root,
+                plugin_id,
+                beta_sha=next_sha,
+                stable_sha=None,
+                state="waiting_for_beta",
+                delivery_id="next-batch",
+            )
+            factory.validate_registry_and_snapshots(root)
+            factory.validate_registry_and_snapshots(root, baseline_root=baseline)
+
+            # Restaging without any publication evidence is still refused.
+            factory.publication_path(root, plugin_id).unlink()
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "without Factory publication evidence"):
+                factory.stage_beta(root, plugin_id, source)
+
+    def test_fresh_first_party_can_be_withdrawn(self) -> None:
+        """Disabling a fresh plugin keeps the evidence rules instead of demanding an adoption."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-first-party-fresh-disabled-") as directory:
+            workspace = Path(directory)
+            root = workspace / "factory"
+            plugin_id = "com.xsec.workspace.sub-agent"
+            self.make_factory(root, self.first_party_entry(status="active"))
+            source = self.make_first_party_source(workspace)
+            self.publish_fresh_first_party_beta(root, source)
+            baseline = workspace / "baseline"
+            shutil.copytree(root, baseline)
+
+            self.make_factory(root, self.first_party_entry(status="disabled"))
+            write_json(
+                root / ".agents" / "plugins" / "marketplace.json",
+                {"name": "xsec-official", "interface": {"displayName": "Test"}, "plugins": []},
+            )
+            self.assertTrue(factory.first_party_fresh(root, factory.registration_for(root, plugin_id, active=False)))
+            factory.validate_registry_and_snapshots(root)
+            factory.validate_registry_and_snapshots(root, baseline_root=baseline)
+
+            evidence = factory.publication_path(root, plugin_id)
+            evidence.unlink()
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "must retain publication evidence"):
+                factory.validate_registry_and_snapshots(root)
+
     def test_first_party_cannot_drop_an_adoption_recorded_in_the_trusted_baseline(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-first-party-adoption-retained-") as directory:
             workspace = Path(directory)
