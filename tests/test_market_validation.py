@@ -2420,6 +2420,11 @@ export function renderPlaceholder() {}
         self.assertIn('runtime="$sidecar_root/xsec-native-sidecars-$target/browser-runtime"', signing_job)
         for text in (workflow, batch):
             self.assertNotIn("'binary-analysis-mcp.exe')", text.replace('release/binary-analysis-mcp.exe"', ""))
+            # Corepack resolves pnpm from the current directory's package.json;
+            # --dir from this repository's root would pick its default pnpm.
+            self.assertNotIn("pnpm --dir", text)
+            self.assertIn("(cd .xsec-desktop-source && pnpm install --frozen-lockfile)", text)
+            self.assertIn("Push-Location .xsec-desktop-source", text)
             self.assertNotIn("cache: pnpm", text)
 
     def test_disposable_build_rejects_nested_plugin_link_before_copytree(self) -> None:

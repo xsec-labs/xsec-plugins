@@ -433,7 +433,9 @@ jobs:
           chmod 0755 "$output_dir/asset-discovery-mcp"
           chmod 0755 "$output_dir/browser-mcp"
           corepack enable
-          pnpm --dir .xsec-desktop-source install --frozen-lockfile
+          # Corepack picks the pnpm version from the package.json in the current
+          # directory, so run pnpm inside the Desktop checkout (pnpm@10 there).
+          (cd .xsec-desktop-source && pnpm install --frozen-lockfile)
           case "$RUST_TARGET" in
             aarch64-apple-darwin) runtime_platform="macos-arm64" ;;
             x86_64-apple-darwin) runtime_platform="macos-x86_64" ;;
@@ -442,7 +444,7 @@ jobs:
           esac
           runtime_deploy="$RUNNER_TEMP/xsec-browser-runtime-deps-$RUST_TARGET"
           [ ! -e "$runtime_deploy" ] || { echo "Browser runtime staging path already exists." >&2; exit 1; }
-          pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy "$runtime_deploy"
+          (cd .xsec-desktop-source && pnpm --filter xsec-desktop deploy --prod --legacy "$runtime_deploy")
           runtime_root="$output_dir/browser-runtime"
           mkdir -p "$runtime_root/node/$runtime_platform" "$runtime_root/bridge"
           python scripts/browser_node_runtime.py --platform "$runtime_platform" --output "$runtime_root/node/$runtime_platform/node"
@@ -492,12 +494,22 @@ jobs:
           }
           corepack enable
           if ($LASTEXITCODE -ne 0) { throw 'corepack enable failed' }
-          pnpm --dir .xsec-desktop-source install --frozen-lockfile
-          if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
+          # Corepack picks the pnpm version from the package.json in the current
+          # directory, so run pnpm inside the Desktop checkout (pnpm@10 there).
+          Push-Location .xsec-desktop-source
+          try {
+            pnpm install --frozen-lockfile
+            if ($LASTEXITCODE -ne 0) { throw 'pnpm install failed' }
+          }
+          finally { Pop-Location }
           $runtimeDeploy = Join-Path $env:RUNNER_TEMP "xsec-browser-runtime-deps-$env:RUST_TARGET"
           if (Test-Path -LiteralPath $runtimeDeploy) { throw 'Browser runtime staging path already exists' }
-          pnpm --dir .xsec-desktop-source --filter xsec-desktop deploy --prod --legacy $runtimeDeploy
-          if ($LASTEXITCODE -ne 0) { throw 'pnpm deploy failed' }
+          Push-Location .xsec-desktop-source
+          try {
+            pnpm --filter xsec-desktop deploy --prod --legacy $runtimeDeploy
+            if ($LASTEXITCODE -ne 0) { throw 'pnpm deploy failed' }
+          }
+          finally { Pop-Location }
           $runtimeRoot = Join-Path $outputDirectory 'browser-runtime'
           New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'node\windows-x86_64') -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'bridge') -Force | Out-Null
