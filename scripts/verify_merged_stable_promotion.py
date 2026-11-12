@@ -45,6 +45,8 @@ FIRST_PARTY_ROOT_PACKAGE_IDS = frozenset(
     {
         "com.xsec.asset-discovery",
         "com.xsec.attack-path",
+        "com.xsec.binary-analysis",
+        "com.xsec.jwt-analysis",
         "com.xsec.system-terminal",
         "com.xsec.workspace.approvals",
         "com.xsec.workspace.browser",
@@ -648,9 +650,19 @@ def require_first_party_gitlink(
     after_sha = gitlink_revision(root, after, plugin_id)
     if after_sha != source["sha"]:
         fail("first-party Beta publication Gitlink does not match its authenticated source SHA")
-    if before_sha == after_sha:
+    if before_sha == after_sha and not first_publication_at(root, before, plugin_id):
+        # A first publication may find the Gitlink already at its source:
+        # the layout migration materialized each plugin's Beta head before
+        # anything was published. Every later Beta must advance it.
         fail("first-party Beta publication did not advance its Gitlink")
     return path
+
+
+def first_publication_at(root: Path, revision: str, plugin_id: str) -> bool:
+    """Whether ``revision`` holds no release history for ``plugin_id``."""
+
+    path = f"{SNAPSHOT_ROOT}/{plugin_id}/.xsec-market/releases.json"
+    return not git_text(root, ["ls-tree", revision, "--", path])
 
 
 def registry_source_binding(

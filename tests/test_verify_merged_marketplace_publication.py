@@ -309,6 +309,59 @@ class MergedMarketplacePublicationTests(unittest.TestCase):
             self.assertEqual(result["promotions"][0]["source"], {"repository": "example/plugin", "ref": "refs/heads/beta", "sha": "a" * 40})
             self.assertEqual(result["promotions"][0]["main_source"], {"repository": "example/plugin", "ref": "refs/heads/main", "sha": "b" * 40})
 
+    def test_root_package_ids_match_the_factory(self) -> None:
+        import external_source_factory
+
+        self.assertEqual(verifier.FIRST_PARTY_ROOT_PACKAGE_IDS, external_source_factory.FIRST_PARTY_ROOT_PACKAGE_IDS)
+
+    def test_first_party_first_beta_accepts_a_gitlink_already_at_its_source(self) -> None:
+        """The layout migration may already point the Gitlink at the first published Beta."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-merged-first-party-first-beta-") as directory:
+            root = Path(directory)
+            self.make_repository(root, registered=True, with_release_history=False)
+            registry_path = root / ".xsec-factory/official-registry.json"
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["plugins"][0]["trustTier"] = "first-party"
+            write_json(registry_path, registry)
+            before = self.commit_with_gitlink(root, "first-party source materialized", "a" * 40)
+
+            beta = release("1.0.0", "beta")
+            self.write_release(root, [beta], beta=beta["releaseId"], stable=None)
+            write_json(root / ".agents/plugins/marketplace.json", marketplace_index(PLUGIN_ID))
+            (root / ".agents/plugins/marketplace.json.sig.jws.json").write_text("signed beta index\n", encoding="utf-8")
+            (root / snapshot_path(PLUGIN_ID) / ".xsec-market/releases.json.sig.jws.json").write_text(
+                "signed beta release\n", encoding="utf-8"
+            )
+            (root / snapshot_path(PLUGIN_ID) / "frontend.js").write_text("export {}\n", encoding="utf-8")
+            event = {
+                "channel": "beta",
+                "releaseId": beta["releaseId"],
+                "source": {"repository": "example/plugin", "path": f"plugins/{PLUGIN_ID}", "ref": "refs/heads/beta", "sha": "a" * 40},
+                "artifact": {"sha256": beta["artifacts"][0]["sha256"], "url": beta["artifacts"][0]["url"]},
+                "publisher": "factory",
+            }
+            write_json(root / f".xsec-factory/official-publications/{PLUGIN_ID}.json", {"schemaVersion": 1, "pluginId": PLUGIN_ID, "events": [event]})
+            proof = root / f".xsec-factory/official-publication-proofs/{PLUGIN_ID}.json"
+            proof.parent.mkdir(parents=True, exist_ok=True)
+            proof.write_text("signed source provenance\n", encoding="utf-8")
+            self.write_inflight_beta_status(root, beta)
+            after = self.commit_with_gitlink(root, "first-party first beta", "a" * 40)
+
+            result = verifier.classify_merged_change(root, before, after)
+            self.assertEqual(result["kind"], "beta")
+            self.assertEqual(result["promotions"][0]["source"], {"repository": "example/plugin", "ref": "refs/heads/beta", "sha": "a" * 40})
+
+            # Once a release exists, a later Beta must advance the Gitlink.
+            with self.assertRaisesRegex(verifier.PromotionVerificationError, "did not advance its Gitlink"):
+                verifier.require_first_party_gitlink(
+                    root,
+                    after,
+                    after,
+                    plugin_id=PLUGIN_ID,
+                    source={"repository": "example/plugin", "ref": "refs/heads/beta", "sha": "a" * 40},
+                )
+
     def test_binds_first_party_beta_publication_to_its_advanced_gitlink(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-merged-first-party-gitlink-") as directory:
             root = Path(directory)

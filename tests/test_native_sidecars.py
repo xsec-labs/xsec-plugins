@@ -103,22 +103,22 @@ class NativeSidecarFactoryTests(unittest.TestCase):
             self.assertEqual(retained["reusable"], "false")
             self.assertFalse((root / "retained").exists())
 
-            # A history without a Beta pointer is still invalid.
-            release = factory_root / ".xsec-factory" / "snapshots" / PLUGIN_ID / ".xsec-market" / "releases.json"
-            release.parent.mkdir()
-            release.write_text(
-                json.dumps(
-                    {
-                        "schemaVersion": 2,
-                        "pluginId": PLUGIN_ID,
-                        "releases": [{"releaseId": "x"}],
-                        "channels": {"beta": None, "stable": None},
-                    }
-                ),
-                encoding="utf-8",
+            # A real release history without a Beta pointer is still invalid.
+            output = factory_root / ".xsec-factory" / "snapshots" / PLUGIN_ID
+            build_market.build_plugin(
+                source,
+                output,
+                native_sidecar_inputs=sidecar_inputs(root),
+                native_sidecar_source_revision=SOURCE_REVISION,
             )
-            with self.assertRaises((factory.ExternalSourceFactoryError, ValueError)):
+            release = output / ".xsec-market" / "releases.json"
+            document = json.loads(release.read_text(encoding="utf-8"))
+            self.assertTrue(document["releases"])
+            document["channels"]["beta"] = None
+            release.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "beta"):
                 factory.reconcile_retained_native_beta(factory_root, source, registration, root / "retained")
+            self.assertFalse((root / "retained").exists())
 
     def test_packed_runtime_bytes_stay_exact_in_the_archive(self) -> None:
         """Runtime files are bound to their manifest digests, so CRLF must survive."""
