@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xsec.local/schemas/jwt-analysis-result.schema.json",
+  "title": "XSEC JWT Analysis Job",
+  "type": "object",
+  "required": ["job_id", "project_id", "status", "profile", "tokens", "tests", "wordlist_runs"],
+  "properties": {
+    "job_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "status": { "enum": ["queued", "running", "completed", "error", "cancelled"] },
+    "profile": { "enum": ["full", "passive"] },
+    "tokens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["token_fingerprint", "header", "payload", "signature"],
+        "properties": {
+          "token_fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "header": { "type": "object" },
+          "payload": { "type": "object" },
+          "signature": { "type": "string" },
+          "algorithm": { "type": ["string", "null"] },
+          "key_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["test_id", "category", "status", "severity", "confidence", "details"],
+        "properties": {
+          "test_id": { "type": "string" },
+          "category": { "enum": ["static", "claims", "secret", "nday", "active"] },
+          "cve": { "type": ["string", "null"] },
+          "status": { "enum": ["vulnerable", "candidate", "not_vulnerable", "not_applicable", "not_run", "blocked", "error"] },
+          "severity": { "enum": ["critical", "high", "medium", "low", "informational"] },
+          "confidence": { "enum": ["confirmed", "high", "medium", "low"] },
+          "details": { "type": "object" },
+          "evidence_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "wordlist_runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["token_fingerprint", "wordlist_id", "candidates", "matched", "invalid_utf8"],
+        "properties": {
+          "token_fingerprint": { "type": "string" },
+          "wordlist_id": { "type": "string" },
+          "candidates": { "type": "integer", "minimum": 0 },
+          "matched": { "type": "integer", "enum": [0, 1] },
+          "invalid_utf8": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}

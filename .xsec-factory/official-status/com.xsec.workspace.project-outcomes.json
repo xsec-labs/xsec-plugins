@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.project-outcomes",
+  "trustTier": "first-party",
+  "source": {
+    "repository": "xsec-labs/xsec-plugin-project-outcomes",
+    "path": ".",
+    "refs": {
+      "beta": "refs/heads/beta",
+      "stable": "refs/heads/main"
+    },
+    "betaSha": "394457a78e94b51a9fab4bc958de914369d7ef74",
+    "stableSha": null,
+    "mainGateSha": "e41a255f4032efd1d6c1e4a6b594174866dc373e"
+  },
+  "release": {
+    "betaReleaseId": "sha256-97ec1ea130ab4f812915a40464f987f2a4e66b821369970ab139e299aab42e5a",
+    "stableReleaseId": null
+  },
+  "publication": {
+    "state": "waiting_for_beta",
+    "deliveryId": "batch-43219574364.1",
+    "factoryRunUrl": "https://github.com/xsec-labs/xsec-plugins/actions/runs/43219574364",
+    "smokeRunUrl": null,
+    "marketplaceRevision": null
+  }
+}

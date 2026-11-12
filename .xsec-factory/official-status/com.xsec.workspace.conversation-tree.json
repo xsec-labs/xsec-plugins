@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.conversation-tree",
+  "trustTier": "first-party",
+  "source": {
+    "repository": "xsec-labs/xsec-plugin-conversation-tree",
+    "path": ".",
+    "refs": {
+      "beta": "refs/heads/beta",
+      "stable": "refs/heads/main"
+    },
+    "betaSha": "422fd68bc2f475f20d223e773011490666d178c8",
+    "stableSha": null,
+    "mainGateSha": "79019b08b74691ca110924b9911d3e1b2d29ad8f"
+  },
+  "release": {
+    "betaReleaseId": "sha256-4627bb8846d923a343b783493fa5d97519787b00fc4acda4e0a9d74f876b14fe",
+    "stableReleaseId": null
+  },
+  "publication": {
+    "state": "waiting_for_beta",
+    "deliveryId": "batch-43219574364.1",
+    "factoryRunUrl": "https://github.com/xsec-labs/xsec-plugins/actions/runs/43219574364",
+    "smokeRunUrl": null,
+    "marketplaceRevision": null
+  }
+}

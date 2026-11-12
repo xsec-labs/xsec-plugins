@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "attack-path": {
+      "type": "stdio",
+      "command": "./bin/attack-path-mcp",
+      "cwd": "${PLUGIN_DATA}"
+    }
+  }
+}

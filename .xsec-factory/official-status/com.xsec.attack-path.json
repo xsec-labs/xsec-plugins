@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.attack-path",
+  "trustTier": "first-party",
+  "source": {
+    "repository": "xsec-labs/xsec-plugin-attack-path",
+    "path": ".",
+    "refs": {
+      "beta": "refs/heads/beta",
+      "stable": "refs/heads/main"
+    },
+    "betaSha": "873137165b0fefcea215b013a4097d94cb911f60",
+    "stableSha": null,
+    "mainGateSha": "1478e41e599f68d27dda053e7a81644f886ca243"
+  },
+  "release": {
+    "betaReleaseId": "sha256-b0a90b301435c2b30301f7e3d8991475c523fd59f7f68c9d681164e610b596c1",
+    "stableReleaseId": null
+  },
+  "publication": {
+    "state": "waiting_for_beta",
+    "deliveryId": "batch-43219574364.1",
+    "factoryRunUrl": "https://github.com/xsec-labs/xsec-plugins/actions/runs/43219574364",
+    "smokeRunUrl": null,
+    "marketplaceRevision": null
+  }
+}

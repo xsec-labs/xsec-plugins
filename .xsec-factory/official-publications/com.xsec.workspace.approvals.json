@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "com.xsec.workspace.approvals",
+  "events": [
+    {
+      "channel": "beta",
+      "releaseId": "sha256-86453a0f5c4efbb9f6e3df4b521e4a22672590c39bcb72591ca8792370cfbad8",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-approvals",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "4587656ddf651e25b7f803d694ad6e1ad7c79fa1"
+      },
+      "artifact": {
+        "sha256": "e0aaeab0b8187db0eda12a53c23fb61a9950c9d4661989becbf7ca558aed7184",
+        "url": "artifacts/com.xsec.workspace.approvals-2.0.1-sha256-e0aaeab0b8187db0-any-any.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
+    }
+  ]
+}

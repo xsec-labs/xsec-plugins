@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+from build_engine_bundle import WINDOWS_STATIC_RUNTIME, write_ghidra_mingw_compat, r2ghidra_environment, radare2_configure_command, radare2_environment, radare2_make_arguments
+
+# A C++20 static archive whose first member also needs a symbol nothing
+# provides, linked into a C++14 executable: the same shape as r2ghidra's
+# libslgh.a (sleigh_arch.o, grammar.o) and sleighc.
+ROOT_MESON = """project('engine-link-order', 'cpp', default_options: ['cpp_std=c++20'])
+tool = subproject('archive', default_options: ['default_library=static']).get_variable('tool')
+"""
+ARCHIVE_MESON = """project('archive', 'cpp')
+archive = static_library('archive', ['needs_decompiler.cc', 'strings.cc'])
+tool = executable('tool', 'main.cc', link_with: archive, override_options: ['cpp_std=c++14'])
+"""
+NEEDS_DECOMPILER = """#include <string>
+void decompiler_only();
+std::size_t needs_decompiler(const std::string &s) { decompiler_only(); return s.size(); }
+"""
+STRINGS = """#include <string>
+std::size_t string_length(const std::string &s) { return s.size() + (s.data() != nullptr); }
+"""
+MAIN = """#include <cstdio>
+#include <string>
+std::size_t string_length(const std::string &s);
+int main() {
+  std::string s = "sleigh";
+  std::printf("%zu %zu %d\\n", string_length(s), s.size(), s.data()[0]);
+  return 0;
+}
+"""
+
+
+class R2GhidraEnvironmentTests(unittest.TestCase):
+    def test_linux_links_libstdcxx_before_the_ghidra_archives(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-r2ghidra-env-") as directory:
+            prefix = Path(directory)
+            previous = os.environ.get("LDFLAGS")
+            os.environ["LDFLAGS"] = "-L/opt/example/lib"
+            try:
+                environment = r2ghidra_environment(prefix, "linux")
+            finally:
+                if previous is None:
+                    os.environ.pop("LDFLAGS", None)
+                else:
+                    os.environ["LDFLAGS"] = previous
+
+            self.assertEqual(environment["LDFLAGS"], "-lstdc++ -L/opt/example/lib")
+            self.assertEqual(environment["PKG_CONFIG_PATH"], str(prefix / "lib" / "pkgconfig"))
+
+    def test_other_hosts_keep_the_engine_environment(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-r2ghidra-env-") as directory:
+            prefix = Path(directory)
+            header = write_ghidra_mingw_compat(prefix)
+            environment = r2ghidra_environment(prefix, "darwin", header)
+            self.assertEqual(environment.get("LDFLAGS"), os.environ.get("LDFLAGS"))
+
+    def test_windows_links_the_gcc_runtime_statically(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-r2ghidra-env-") as directory, mock.patch.dict(
+            os.environ, {"LDFLAGS": "-L/ucrt64/lib"}
+        ):
+            prefix = Path(directory)
+            header = write_ghidra_mingw_compat(prefix)
+            ldflags = r2ghidra_environment(prefix, "windows", header)["LDFLAGS"]
+            self.assertEqual(ldflags, f"{WINDOWS_STATIC_RUNTIME} -L/ucrt64/lib")
+
+    def test_windows_selects_the_ghidra_win32_sources(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-r2ghidra-env-") as directory, mock.patch.dict(
+            os.environ, {"CXXFLAGS": "-O2"}
+        ):
+            prefix = Path(directory)
+            header = write_ghidra_mingw_compat(prefix)
+            self.assertEqual(
+                r2ghidra_environment(prefix, "windows", header)["CXXFLAGS"],
+                f"-O2 -D_WINDOWS -include {header.as_posix()}",
+            )
+            self.assertIn("#define isatty xsec_ghidra_scanner_isatty", header.read_text())
+            with self.assertRaisesRegex(ValueError, "compat header"):
+                r2ghidra_environment(prefix, "windows")
+            for os_name in ("linux", "darwin"):
+                with self.subTest(os_name=os_name):
+                    self.assertEqual(r2ghidra_environment(prefix, os_name)["CXXFLAGS"], "-O2")
+
+
+class Radare2ConfigureTests(unittest.TestCase):
+    def test_windows_names_its_os_type(self) -> None:
+        prefix = Path("D:/a/_temp/prefix")
+        self.assertEqual(
+            radare2_configure_command(prefix, "windows"),
+            ["sh", "configure", "--with-ostype=windows", "--without-gpl", f"--prefix={prefix}"],
+        )
+
+    def test_windows_keeps_incompatible_pointer_types_a_warning(self) -> None:
+        with mock.patch.dict(os.environ, {"CFLAGS": "-O2", "LDFLAGS": "-L/ucrt64/lib"}):
+            os.environ.pop("MSYS", None)
+            windows = radare2_environment("windows")
+            self.assertEqual(windows["CFLAGS"], "-O2 -Wno-error=incompatible-pointer-types")
+            self.assertEqual(windows["MSYS"], "winsymlinks:nativestrict")
+            self.assertEqual(windows["LDFLAGS"], "-static-libgcc -L/ucrt64/lib")
+            for os_name in ("linux", "darwin"):
+                with self.subTest(os_name=os_name):
+                    self.assertEqual(radare2_environment(os_name)["CFLAGS"], "-O2")
+                    self.assertEqual(radare2_environment(os_name)["LDFLAGS"], "-L/ucrt64/lib")
+                    self.assertNotIn("MSYS", radare2_environment(os_name))
+
+    def test_unix_hosts_need_no_extra_make_arguments(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-r2-make-") as directory:
+            for os_name in ("linux", "darwin"):
+                with self.subTest(os_name=os_name):
+                    self.assertEqual(radare2_make_arguments(Path(directory), os_name), [])
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    @unittest.skipUnless(shutil.which("sh"), "needs sh")
+    def test_windows_ar_wrapper_converts_absolute_mri_paths(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-r2-ar-") as directory:
+            root = Path(directory)
+            arguments = radare2_make_arguments(root, "windows")
+            wrapper = root / "radare2-mri-ar.sh"
+            self.assertEqual(arguments, [f"AR=sh {wrapper.as_posix()}"])
+            tools = root / "bin"
+            tools.mkdir()
+            (tools / "cygpath").write_text('#!/bin/sh\n[ "$1" = -m ] && printf "D:%s" "$2"\n')
+            (tools / "ar").write_text('#!/bin/sh\nprintf "%s|" "$*" > "$AR_LOG"\ncat >> "$AR_LOG"\n')
+            for tool in tools.iterdir():
+                tool.chmod(0o755)
+            log = root / "ar.log"
+            environment = {**os.environ, "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}", "AR_LOG": str(log)}
+            mri = "create libr_shlr.lib\naddlib ar/libr_ar.a\naddlib /d/a/_temp/zydis/libzydis.a\nsave\nend\n"
+            subprocess.run(["sh", str(wrapper), "-M"], input=mri, text=True, check=True, env=environment)
+            self.assertEqual(
+                log.read_text(),
+                "-M|create libr_shlr.lib\naddlib ar/libr_ar.a\naddlib D:/d/a/_temp/zydis/libzydis.a\nsave\nend\n",
+            )
+            subprocess.run(["sh", str(wrapper), "rcs", "libsdb.lib", "a.o"], input="", text=True, check=True, env=environment)
+            self.assertEqual(log.read_text(), "rcs libsdb.lib a.o|")
+
+            log.unlink()
+            (tools / "cygpath").write_text("#!/bin/sh\nexit 1\n")
+            failed = subprocess.run(["sh", str(wrapper), "-M"], input=mri, text=True, env=environment)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(log.exists(), "ar ran with an unconverted MRI script")
+
+    def test_unix_hosts_keep_automatic_detection(self) -> None:
+        prefix = Path("/tmp/prefix")
+        for os_name in ("linux", "darwin"):
+            with self.subTest(os_name=os_name):
+                self.assertEqual(
+                    radare2_configure_command(prefix, os_name),
+                    ["./configure", "--without-gpl", f"--prefix={prefix}"],
+                )
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "the link-order failure is specific to GNU ld")
+@unittest.skipUnless(shutil.which("meson") and shutil.which("ninja") and shutil.which("c++"), "needs meson, ninja and c++")
+class R2GhidraLinkOrderBuildTests(unittest.TestCase):
+    def test_mixed_standard_archive_links_with_the_r2ghidra_environment(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-r2ghidra-link-") as directory:
+            root = Path(directory)
+            source = root / "source"
+            archive = source / "subprojects" / "archive"
+            archive.mkdir(parents=True)
+            (source / "meson.build").write_text(ROOT_MESON)
+            (archive / "meson.build").write_text(ARCHIVE_MESON)
+            (archive / "needs_decompiler.cc").write_text(NEEDS_DECOMPILER)
+            (archive / "strings.cc").write_text(STRINGS)
+            (archive / "main.cc").write_text(MAIN)
+            build = root / "build"
+            environment = r2ghidra_environment(root / "prefix", "linux")
+
+            # b_ndebug=true keeps _GLIBCXX_ASSERTIONS off on every Meson
+            # version, so the link fails without the fix as it did with 1.3.2.
+            subprocess.run(
+                ["meson", "setup", "-Db_ndebug=true", str(build), str(source)],
+                check=True,
+                capture_output=True,
+                env=environment,
+            )
+            link_args = next(
+                (
+                    line
+                    for line in (build / "build.ninja").read_text().splitlines()
+                    if line.strip().startswith("LINK_ARGS") and "libarchive.a" in line
+                ),
+                None,
+            )
+            self.assertIsNotNone(link_args, "Meson wrote no link line for the archive tool")
+            self.assertLess(link_args.index("-lstdc++"), link_args.index("libarchive.a"))
+
+            compiled = subprocess.run(["ninja", "-C", str(build)], capture_output=True, text=True, env=environment)
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            tool = build / "subprojects" / "archive" / "tool"
+            self.assertEqual(subprocess.run([str(tool)], check=True, capture_output=True, text=True).stdout, "7 6 115\n")
+
+
+if __name__ == "__main__":
+    unittest.main()
