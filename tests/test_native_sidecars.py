@@ -92,6 +92,34 @@ class NativeSidecarFactoryTests(unittest.TestCase):
                 "a" * 40,
             )
 
+    def test_first_publication_does_not_reuse_a_retained_native_beta(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-native-first-publication-") as directory:
+            root = Path(directory)
+            source = write_attack_path_source(root)
+            factory_root = root / "factory"
+            (factory_root / ".xsec-factory" / "snapshots" / PLUGIN_ID).mkdir(parents=True)
+            registration = replace(native_registration(), source_path=PurePosixPath("."))
+            retained = factory.reconcile_retained_native_beta(factory_root, source, registration, root / "retained")
+            self.assertEqual(retained["reusable"], "false")
+            self.assertFalse((root / "retained").exists())
+
+            # A real release history without a Beta pointer is still invalid.
+            output = factory_root / ".xsec-factory" / "snapshots" / PLUGIN_ID
+            build_market.build_plugin(
+                source,
+                output,
+                native_sidecar_inputs=sidecar_inputs(root),
+                native_sidecar_source_revision=SOURCE_REVISION,
+            )
+            release = output / ".xsec-market" / "releases.json"
+            document = json.loads(release.read_text(encoding="utf-8"))
+            self.assertTrue(document["releases"])
+            document["channels"]["beta"] = None
+            release.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "beta"):
+                factory.reconcile_retained_native_beta(factory_root, source, registration, root / "retained")
+            self.assertFalse((root / "retained").exists())
+
     def test_packed_runtime_bytes_stay_exact_in_the_archive(self) -> None:
         """Runtime files are bound to their manifest digests, so CRLF must survive."""
 
