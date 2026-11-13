@@ -71,9 +71,21 @@ def marketplace_matches(document: dict[str, object], plugin_id: str) -> tuple[li
     return plugins, matches
 
 
+def registry_has_entry(document: dict[str, object], plugin_id: str) -> bool:
+    if document.get("schemaVersion") != 2 or not isinstance(document.get("plugins"), list):
+        fail("official Factory registry must use schemaVersion 2 with a plugin list")
+    return any(isinstance(entry, dict) and entry.get("pluginId") == plugin_id for entry in document["plugins"])
+
+
 def disable_project_workspace(registry: dict[str, object], marketplace: dict[str, object]) -> bool:
-    entry = registry_entry(registry, PROJECT_WORKSPACE_PLUGIN_ID)
     plugins, matches = marketplace_matches(marketplace, PROJECT_WORKSPACE_PLUGIN_ID)
+    if not registry_has_entry(registry, PROJECT_WORKSPACE_PLUGIN_ID):
+        # A Factory initialized after Desktop took over the project workspace never
+        # registered the package. With no Registry row, it must not be discoverable.
+        if matches:
+            fail("project workspace is discoverable without an official Factory registry entry")
+        return False
+    entry = registry_entry(registry, PROJECT_WORKSPACE_PLUGIN_ID)
     if entry.get("policy") != DEFAULT_POLICY or entry.get("status") not in {"active", "disabled"}:
         fail("project workspace Registry policy or status is invalid")
     if entry["status"] == "disabled" and not matches:
