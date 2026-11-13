@@ -35,7 +35,7 @@ class ReconcileSourceWorkflowTests(unittest.TestCase):
         self.assertIn("Resolve the current Desktop main sidecar source revision", source)
         self.assertIn("repos/xsec-labs/xSecDesktop/commits/main", source)
         self.assertIn('native_sidecars_source_sha="$NATIVE_SIDECARS_SOURCE_SHA"', source)
-        self.assertIn("actions/create-github-app-token@v2", source)
+        self.assertRegex(source, r"actions/create-github-app-token@[0-9a-f]{40} # v2")
         self.assertIn("XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID", source)
         self.assertIn("steps.desktop-source-token.outputs.token", source)
         desktop_step = source.index("Resolve the current Desktop main sidecar source revision")

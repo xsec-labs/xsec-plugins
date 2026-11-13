@@ -2434,7 +2434,7 @@ export function renderPlaceholder() {}
         steps = workflow.split("  sign-and-publish:\n", 1)[1].split("    steps:\n", 1)[1]
         self.assertLess(
             steps.index("Require the protected marketplace publication token before checkout or KMS"),
-            steps.index("actions/checkout@v4"),
+            steps.index("actions/checkout@"),
         )
         sidecar_job = workflow.split("  build-native-sidecars:\n", 1)[1].split("  sign-and-publish:\n", 1)[0]
         self.assertIn("XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID", sidecar_job)
@@ -2488,7 +2488,7 @@ export function renderPlaceholder() {}
             # The runtime steps call this repository's scripts/, so the job
             # must check itself out, and before the nested source checkouts.
             first = job["steps"][0]
-            self.assertEqual(first.get("uses"), "actions/checkout@v4", name)
+            self.assertRegex(first.get("uses", ""), r"^actions/checkout@[0-9a-f]{40}$", name)
             self.assertNotIn("repository", first.get("with", {}), name)
             self.assertNotIn("path", first.get("with", {}), name)
             for step in job["steps"]:
