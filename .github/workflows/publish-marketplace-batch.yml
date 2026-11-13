@@ -261,7 +261,7 @@ jobs:
             venv_python="$venv/bin/python"
             built="$dist/jwt-analysis-mcp"
           fi
-          "$venv_python" -m pip install --disable-pip-version-check --no-input --requirement .xsec-jwt-analysis-source/requirements-build.lock
+          "$venv_python" -m pip install --disable-pip-version-check --no-input --require-hashes --requirement .xsec-jwt-analysis-source/requirements-build.lock
           "$venv_python" .xsec-jwt-analysis-source/scripts/build_sidecar.py --output "$built"
           "$venv_python" .xsec-jwt-analysis-source/scripts/verify_sidecar.py "$built"
           [ -f "$built" ] && [ ! -L "$built" ] && [ -s "$built" ]

@@ -94,6 +94,31 @@ class MarketplaceDefaultsMaintenanceTests(unittest.TestCase):
             root = self.make_root(directory, status="disabled", discovered=False, attack_available=True)
             self.assertFalse(maintenance.apply_transition(root))
 
+    def test_factory_without_a_project_workspace_row_is_already_aligned(self) -> None:
+        # A Factory initialized after Desktop took over the project workspace never
+        # registered it; push-triggered maintenance must not fail on every main commit.
+        with tempfile.TemporaryDirectory(prefix="xsec-default-set-unregistered-") as directory:
+            root = self.make_root(directory, status="disabled", discovered=False, attack_available=True)
+            registry = json.loads((root / maintenance.REGISTRY_PATH).read_text(encoding="utf-8"))
+            registry["plugins"] = registry["plugins"][1:]
+            write_json(root / maintenance.REGISTRY_PATH, registry)
+            before = (root / maintenance.MARKETPLACE_PATH).read_bytes(), (root / maintenance.REGISTRY_PATH).read_bytes()
+
+            self.assertFalse(maintenance.apply_transition(root))
+            self.assertEqual(
+                ((root / maintenance.MARKETPLACE_PATH).read_bytes(), (root / maintenance.REGISTRY_PATH).read_bytes()),
+                before,
+            )
+
+            marketplace = json.loads((root / maintenance.MARKETPLACE_PATH).read_text(encoding="utf-8"))
+            marketplace["plugins"].insert(0, marketplace_entry(maintenance.PROJECT_WORKSPACE_PLUGIN_ID))
+            write_json(root / maintenance.MARKETPLACE_PATH, marketplace)
+            with self.assertRaisesRegex(
+                maintenance.MarketplaceDefaultsMaintenanceError,
+                "discoverable without an official Factory registry entry",
+            ):
+                maintenance.apply_transition(root)
+
     def test_available_first_party_plugin_remains_discoverable_without_joining_defaults(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-available-first-party-") as directory:
             root = Path(directory)

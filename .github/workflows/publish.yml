@@ -1111,7 +1111,12 @@ jobs:
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
           elif [ "$EXTERNAL" != "true" ]; then
             if test -z "$(git status --porcelain --untracked-files=all -- .agents/plugins .xsec-factory)"; then
-              python scripts/external_source_factory.py validate
+              # Nothing is signed or published here. Validate main as the
+              # validate.yml gate and the batch publisher do: the initial
+              # release has no KMS publication proofs or release sidecars.
+              python scripts/external_source_factory.py validate \
+                --allow-unsigned-publication-proofs \
+                --allow-unsigned-active-release-sidecars
               git diff --exit-code
               test -z "$(git status --porcelain --untracked-files=all)" || {
                 echo "A built-in no-op left unexpected Factory changes." >&2
