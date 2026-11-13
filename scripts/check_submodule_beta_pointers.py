@@ -15,10 +15,15 @@ import sys
 from pathlib import Path
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+REQUIRED_FIELDS = ("path", "url", "branch")
 
 
 def submodule_branches(root: Path) -> list[tuple[str, str, str]]:
-    """Return (path, url, branch) for each submodule that tracks a branch."""
+    """Return (path, url, branch) for each submodule in .gitmodules.
+
+    A submodule without a branch is an error rather than a skip: a skipped
+    entry would escape the check without anyone noticing.
+    """
     output = subprocess.run(
         ["git", "config", "--file", ".gitmodules", "--get-regexp", r"^submodule\..*\.(path|url|branch)$"],
         cwd=root,
@@ -31,11 +36,16 @@ def submodule_branches(root: Path) -> list[tuple[str, str, str]]:
         key, value = line.split(" ", 1)
         name, field = key[len("submodule.") :].rsplit(".", 1)
         entries.setdefault(name, {})[field] = value
-    return [
-        (fields["path"], fields["url"], fields["branch"])
-        for fields in entries.values()
-        if "path" in fields and "url" in fields and "branch" in fields
-    ]
+    tracked = []
+    for name, fields in entries.items():
+        missing = [field for field in REQUIRED_FIELDS if field not in fields]
+        if missing:
+            raise ValueError(
+                f"submodule {name} in .gitmodules has no {', '.join(missing)}; "
+                "every plugin submodule must name its path, url and Beta branch"
+            )
+        tracked.append((fields["path"], fields["url"], fields["branch"]))
+    return tracked
 
 
 def recorded_pointer(root: Path, path: str) -> str:
@@ -80,9 +90,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path("."))
     args = parser.parse_args(argv)
     root = args.root.resolve()
-    entries = submodule_branches(root)
+    try:
+        entries = submodule_branches(root)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     if not entries:
-        print("error: no branch-tracking submodules found in .gitmodules", file=sys.stderr)
+        print("error: no submodules found in .gitmodules", file=sys.stderr)
         return 1
     pointers = {path: recorded_pointer(root, path) for path, _, _ in entries}
     heads = {path: branch_head(url, branch) for path, url, branch in entries}
