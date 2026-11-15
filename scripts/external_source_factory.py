@@ -1564,7 +1564,7 @@ def reconcile_retained_native_beta(
     registration: Registration,
     destination: Path,
 ) -> dict[str, str]:
-    """Materialize retained sidecars only when current source reproduces Beta."""
+    """Materialize retained sidecars and packed runtimes only when current source reproduces Beta."""
 
     source_dir = resolve_source_directory(source_root, registration.source_path, "native Beta reconciliation source")
     manifest = source_manifest(source_dir, registration)
@@ -1606,6 +1606,10 @@ def reconcile_retained_native_beta(
     destination.mkdir(parents=True)
     retained_recipe = replace(recipe, targets=targets)
     inputs = retained_native_sidecars(root, registration.plugin_id, beta_record, retained_recipe, normalized, destination)
+    # A recipe that ships a packed runtime (browser, binary-analysis) needs the
+    # retained runtime at build time too: build_market.py's preflight requires
+    # one per target, and refuses the release before signing without it.
+    runtimes = retained_packed_runtimes(root, registration.plugin_id, beta_record, retained_recipe, normalized, destination)
     return {
         "plugin_id": registration.plugin_id,
         "reusable": "true",
@@ -1615,6 +1619,15 @@ def reconcile_retained_native_beta(
             [
                 {"rust_target": target.rust_target, "path": str(inputs[(registration.plugin_id, target.rust_target)])}
                 for target in retained_recipe.targets
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        "runtimes": json.dumps(
+            [
+                {"rust_target": target.rust_target, "path": str(runtimes[(registration.plugin_id, target.rust_target)])}
+                for target in retained_recipe.targets
+                if (registration.plugin_id, target.rust_target) in runtimes
             ],
             ensure_ascii=False,
             separators=(",", ":"),
@@ -1693,6 +1706,10 @@ def retained_packed_runtimes(
                     relative = PurePosixPath(info.filename)
                     if not relative.as_posix().startswith(runtime_prefix) or relative.as_posix() == manifest_path:
                         continue
+                    # Same rule as the packed browser runtime check in native_sidecars.py:
+                    # a member must not climb out of its runtime root.
+                    if relative.is_absolute() or ".." in relative.parts:
+                        fail("native Beta packed runtime contains an escaping member")
                     if info.is_dir():
                         continue
                     output = runtime_root / relative.relative_to(runtime_directory)

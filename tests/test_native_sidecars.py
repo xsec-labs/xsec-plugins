@@ -81,6 +81,71 @@ def native_registration() -> factory.Registration:
     )
 
 
+BROWSER_ID = native_sidecars.BROWSER_RECIPE.plugin_id
+BROWSER_VERSION = "3.1.0"
+
+
+def write_browser_source(root: Path) -> Path:
+    source = root / "browser-source"
+    frontend = source / "com.xsec.desktop" / "frontend"
+    skill = source / "skills" / native_sidecars.BROWSER_RECIPE.skill_id
+    frontend.mkdir(parents=True)
+    skill.mkdir(parents=True)
+    manifest = {
+        "name": BROWSER_ID,
+        "version": BROWSER_VERSION,
+        "extensions": {
+            "com.xsec.desktop": {
+                "schemaVersion": 2,
+                "engines": {"xsec": ">=0.1.0", "pluginApi": "^1.3.0"},
+                "entrypoints": {"frontend": "com.xsec.desktop/frontend/index.js"},
+                "permissions": {"mcp.servers.register": {}, "native.execute": {}},
+            }
+        },
+    }
+    mcp = {"mcpServers": {"browser": {
+        "type": "stdio",
+        "command": "./bin/browser-mcp",
+        "cwd": "${PLUGIN_ROOT}",
+    }}}
+    (source / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (source / "mcp.json").write_text(json.dumps(mcp), encoding="utf-8")
+    (frontend / "index.js").write_text("export {};\n", encoding="utf-8")
+    (skill / "SKILL.md").write_text("# Browser session lifecycle\n", encoding="utf-8")
+    return source
+
+
+def browser_inputs(root: Path) -> tuple[dict[tuple[str, str], Path], dict[tuple[str, str], Path]]:
+    """One valid packed runtime and one sidecar per browser target, keyed by (plugin, rust target)."""
+
+    runtimes: dict[tuple[str, str], Path] = {}
+    sidecars: dict[tuple[str, str], Path] = {}
+    for target in native_sidecars.BROWSER_RECIPE.targets:
+        runtime = root / "runtime" / target.rust_target
+        node = runtime / native_sidecars.browser_runtime_node_path(target)
+        node.parent.mkdir(parents=True)
+        node.write_bytes(f"node runtime for {target.rust_target}\n".encode("utf-8"))
+        (runtime / "node-version.txt").write_text(native_sidecars.BROWSER_NODE_VERSION + "\n", encoding="ascii")
+        for package in ("playwright-core", "cloakbrowser"):
+            package_path = runtime / "node_modules" / package / "package.json"
+            package_path.parent.mkdir(parents=True, exist_ok=True)
+            package_path.write_text('{"name":"' + package + '"}\n', encoding="utf-8")
+        for name in native_sidecars.BROWSER_BRIDGE_FILES:
+            bridge = runtime / "bridge" / name
+            bridge.parent.mkdir(parents=True, exist_ok=True)
+            bridge.write_text("export {};\n", encoding="utf-8")
+        runtimes[(BROWSER_ID, target.rust_target)] = runtime
+        sidecar = root / "sidecars" / target.rust_target
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_bytes(f"browser-mcp for {target.rust_target}\n".encode("utf-8"))
+        sidecars[(BROWSER_ID, target.rust_target)] = sidecar
+    return runtimes, sidecars
+
+
+def tree_bytes(root: Path) -> dict[str, bytes]:
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
 class NativeSidecarFactoryTests(unittest.TestCase):
     def test_first_publication_has_no_retained_native_beta_contract(self) -> None:
         recipe = native_sidecars.RECIPES["com.xsec.binary-analysis"]
@@ -325,30 +390,8 @@ class NativeSidecarFactoryTests(unittest.TestCase):
     def test_browser_runtime_inputs_are_fixed_per_target_and_bound_into_provenance(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-browser-runtime-inputs-") as directory:
             root = Path(directory)
-            runtime_inputs: dict[tuple[str, str], Path] = {}
-            sidecars: dict[str, Path] = {}
-            for target in native_sidecars.BROWSER_RECIPE.targets:
-                runtime = root / "runtime" / target.rust_target
-                node = runtime / native_sidecars.browser_runtime_node_path(target)
-                node.parent.mkdir(parents=True)
-                node.write_bytes(b"node runtime\n")
-                (runtime / "node-version.txt").write_text(
-                    native_sidecars.BROWSER_NODE_VERSION + "\n",
-                    encoding="ascii",
-                )
-                for package in ("playwright-core", "cloakbrowser"):
-                    package_path = runtime / "node_modules" / package / "package.json"
-                    package_path.parent.mkdir(parents=True, exist_ok=True)
-                    package_path.write_text('{"name":"' + package + '"}\n', encoding="utf-8")
-                for name in native_sidecars.BROWSER_BRIDGE_FILES:
-                    bridge = runtime / "bridge" / name
-                    bridge.parent.mkdir(parents=True, exist_ok=True)
-                    bridge.write_text("export {};\n", encoding="utf-8")
-                runtime_inputs[(native_sidecars.BROWSER_RECIPE.plugin_id, target.rust_target)] = runtime
-                sidecar = root / "sidecars" / target.rust_target
-                sidecar.parent.mkdir(parents=True, exist_ok=True)
-                sidecar.write_bytes(b"browser-mcp\n")
-                sidecars[target.rust_target] = sidecar
+            runtime_inputs, browser_sidecars = browser_inputs(root)
+            sidecars = {rust_target: path for (_, rust_target), path in browser_sidecars.items()}
 
             runtimes = native_sidecars.require_packed_runtime_inputs(
                 native_sidecars.BROWSER_RECIPE,
@@ -363,6 +406,73 @@ class NativeSidecarFactoryTests(unittest.TestCase):
             verified = native_sidecars.validate_provenance(native_sidecars.BROWSER_RECIPE, provenance)
             self.assertEqual(len(verified["targets"]), 4)
             self.assertTrue(all("runtimeManifestSha256" in target for target in verified["targets"]))
+
+    def test_retained_browser_beta_reconciliation_hands_back_its_packed_runtimes(self) -> None:
+        """A retained browser Beta ships a packed runtime; reuse must pass it on or the preflight refuses the release."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-browser-retained-runtime-") as directory:
+            root = Path(directory)
+            source = write_browser_source(root)
+            factory_root = root / "factory"
+            snapshots = factory_root / ".xsec-factory" / "snapshots"
+            snapshot = snapshots / BROWSER_ID
+            shutil.copytree(source, snapshot)
+            runtime_inputs, sidecars = browser_inputs(root)
+            build_market.build_plugin(
+                source,
+                snapshot,
+                native_sidecar_inputs=sidecars,
+                packed_runtime_inputs=runtime_inputs,
+                native_sidecar_source_revision=SOURCE_REVISION,
+            )
+
+            registration = replace(
+                native_registration(),
+                plugin_id=BROWSER_ID,
+                repository="xsec-labs/xsec-plugin-browser",
+                source_path=PurePosixPath("."),
+            )
+            retained = factory.reconcile_retained_native_beta(factory_root, source, registration, root / "retained")
+            self.assertEqual(retained["reusable"], "true")
+            inputs = {(BROWSER_ID, item["rust_target"]): Path(item["path"]) for item in json.loads(retained["inputs"])}
+            runtimes = {(BROWSER_ID, item["rust_target"]): Path(item["path"]) for item in json.loads(retained["runtimes"])}
+            self.assertEqual(set(runtimes), set(runtime_inputs))
+            for identity, runtime in runtimes.items():
+                # The retained runtime is the Beta's runtime, byte for byte.
+                self.assertEqual(tree_bytes(runtime), tree_bytes(runtime_inputs[identity]))
+
+            entry = {"source": {"path": str(snapshot)}}
+            with patch.object(build_market, "PLUGIN_ROOT", snapshots):
+                # Without the runtimes this is the refusal the failed Factory run hit.
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "missing packed runtime input: com.xsec.workspace.browser@aarch64-apple-darwin",
+                ):
+                    build_market.preflight_native_sidecars([entry], inputs, {}, SOURCE_REVISION, {}, False)
+                # With them, the retained sidecars reproduce the Beta's provenance.
+                build_market.preflight_native_sidecars([entry], inputs, runtimes, SOURCE_REVISION, {}, False)
+
+    def test_retained_packed_runtime_refuses_a_member_that_escapes_its_root(self) -> None:
+        """A crafted runtime member must not be written beside its target runtime root."""
+
+        recipe = native_sidecars.BROWSER_RECIPE
+        with tempfile.TemporaryDirectory(prefix="xsec-browser-runtime-escape-") as directory:
+            root = Path(directory)
+            artifacts_dir = root / ".xsec-factory" / "snapshots" / BROWSER_ID / ".xsec-market" / "artifacts"
+            artifacts_dir.mkdir(parents=True)
+            artifacts = []
+            for target in recipe.targets:
+                name = f"{BROWSER_ID}-{target.rust_target}.xsec-plugin"
+                with zipfile.ZipFile(artifacts_dir / name, "w") as archive:
+                    archive.writestr("runtime/../escape.txt", b"written outside the runtime\n")
+                artifacts.append({"os": target.os_name, "arch": target.arch, "url": f"artifacts/{name}", "sha256": "0" * 64})
+            record = {"artifacts": artifacts}
+            provenance = {"targets": [{"rustTarget": t.rust_target, "runtimeManifestSha256": "0" * 64} for t in recipe.targets]}
+            destination = root / "retained"
+            destination.mkdir()
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "escaping member"):
+                factory.retained_packed_runtimes(root, BROWSER_ID, record, recipe, provenance, destination)
+            self.assertEqual(list(destination.iterdir()), [])
 
     def test_new_source_revision_moves_the_native_beta_and_keeps_its_history(self) -> None:
         """A changed revision is a new native build; the retained Beta stays in history."""

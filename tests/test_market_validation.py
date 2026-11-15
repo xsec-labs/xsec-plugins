@@ -2473,6 +2473,28 @@ export function renderPlaceholder() {}
         )
         self.assertIn('$native_plugin@$target=$binary', steps)
         self.assertIn('--packed-runtime-input', steps)
+        # A retained untargeted Beta that ships a packed runtime (browser) must
+        # hand that runtime to build_market.py too: its preflight requires one
+        # per target, and it checks every native plugin the index lists.
+        retained_branch = steps.split(
+            'if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then\n', 1
+        )[1].split("              continue\n", 1)[0]
+        # The whole runtime loop is pinned, including its directory check and its
+        # exit: a loop that stopped refusing a missing runtime would not be caught.
+        self.assertIn(
+            """              retained_runtimes="$(printf '%s' "$reconciliation" | jq -ec '.runtimes | fromjson')"
+              while IFS= read -r retained_runtime; do
+                rust_target="$(printf '%s' "$retained_runtime" | jq -er .rust_target)"
+                runtime="$(printf '%s' "$retained_runtime" | jq -er .path)"
+                [ -d "$runtime" ] && [ ! -L "$runtime" ] || {
+                  echo "Retained Beta packed runtime is unavailable for $native_plugin@$rust_target." >&2
+                  exit 1
+                }
+                native_inputs+=("--packed-runtime-input" "$native_plugin@$rust_target=$runtime")
+              done < <(printf '%s' "$retained_runtimes" | jq -rc '.[]')
+""",
+            retained_branch,
+        )
         self.assertIn('binary-engine', steps)
         self.assertIn('BINARY_ANALYSIS_SOURCE_SHA:', steps)
         self.assertIn('source_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$BINARY_ANALYSIS_SOURCE_SHA")', steps)
