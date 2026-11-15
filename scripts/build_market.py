@@ -866,7 +866,14 @@ def retained_native_beta_contract(
     release: dict[str, object],
     source_revision: str | None,
 ) -> tuple[NativeSidecarRecipe | None, dict[str, object] | None]:
-    """Return the signed Beta recipe and provenance for retained sidecars."""
+    """Return the Beta recipe and provenance that a same-revision rebuild must reproduce.
+
+    A native Beta pins its sidecars to the plugin source revision that built
+    them. Rebuilding that revision must reproduce the retained provenance
+    exactly. A different revision returns no retained provenance: it is a new
+    native build, the Beta pointer moves to its release, and the retained
+    release stays in the append-only history.
+    """
 
     if recipe is None or source_revision is None:
         return recipe, None
@@ -888,7 +895,9 @@ def retained_native_beta_contract(
     except (AttributeError, ValueError) as error:
         raise ValueError(f"retained native Beta provenance is invalid for {recipe.plugin_id}: {error}") from error
     if normalized["source"]["revision"] != source_revision:
-        raise ValueError(f"retained native Beta revision does not match {recipe.plugin_id}")
+        # A changed source revision builds fresh, protected sidecars. Nothing in
+        # the retained release is rewritten; it stays in the release history.
+        return recipe, None
     return replace(recipe, targets=targets), normalized
 
 

@@ -363,6 +363,49 @@ class NativeSidecarFactoryTests(unittest.TestCase):
             self.assertEqual(len(verified["targets"]), 4)
             self.assertTrue(all("runtimeManifestSha256" in target for target in verified["targets"]))
 
+    def test_new_source_revision_moves_the_native_beta_and_keeps_its_history(self) -> None:
+        """A changed revision is a new native build; the retained Beta stays in history."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-native-beta-revision-move-") as directory:
+            root = Path(directory)
+            source = write_attack_path_source(root)
+            output = root / "factory" / ".xsec-factory" / "snapshots" / PLUGIN_ID
+            build_market.build_plugin(
+                source,
+                output,
+                native_sidecar_inputs=sidecar_inputs(root),
+                native_sidecar_source_revision=SOURCE_REVISION,
+            )
+            release_path = output / ".xsec-market" / "releases.json"
+            before = json.loads(release_path.read_text(encoding="utf-8"))
+            retained_release = before["releases"][0]
+
+            manifest_path = source / "plugin.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["version"] = "2.0.1"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            moved_root = root / "moved"
+            moved_root.mkdir()
+            moved_inputs = sidecar_inputs(moved_root)
+            for binary in moved_inputs.values():
+                binary.write_bytes(b"a sidecar rebuilt at the new revision\n")
+            new_revision = "b" * 40
+            build_market.build_plugin(
+                source,
+                output,
+                native_sidecar_inputs=moved_inputs,
+                native_sidecar_source_revision=new_revision,
+                native_sidecar_source_revisions={PLUGIN_ID: new_revision},
+            )
+
+            after = json.loads(release_path.read_text(encoding="utf-8"))
+            self.assertEqual([item["version"] for item in after["releases"]], ["2.0.0", "2.0.1"])
+            self.assertEqual(after["releases"][0]["releaseId"], retained_release["releaseId"])
+            self.assertEqual(after["releases"][0]["artifacts"], retained_release["artifacts"])
+            moved_release = after["releases"][1]
+            self.assertEqual(after["channels"]["beta"], {"releaseId": moved_release["releaseId"]})
+            self.assertEqual(moved_release["nativeSidecarProvenance"]["source"]["revision"], new_revision)
+
     def test_retained_native_beta_reconciliation_reuses_immutable_sidecars(self) -> None:
         """A matching source must not republish a new same-version sidecar build."""
 
