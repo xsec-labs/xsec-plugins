@@ -960,6 +960,7 @@ jobs:
                 }
                 native_inputs+=("--native-sidecar-input" "$native_plugin@$rust_target=$binary")
               done < <(printf '%s' "$reconciliation" | jq -rc '.inputs | fromjson | .[]')
+              retained_runtimes="$(printf '%s' "$reconciliation" | jq -ec '.runtimes | fromjson')"
               while IFS= read -r retained_runtime; do
                 rust_target="$(printf '%s' "$retained_runtime" | jq -er .rust_target)"
                 runtime="$(printf '%s' "$retained_runtime" | jq -er .path)"
@@ -968,7 +969,7 @@ jobs:
                   exit 1
                 }
                 native_inputs+=("--packed-runtime-input" "$native_plugin@$rust_target=$runtime")
-              done < <(printf '%s' "$reconciliation" | jq -rc '.runtimes | fromjson | .[]')
+              done < <(printf '%s' "$retained_runtimes" | jq -rc '.[]')
               continue
             fi
             case "$native_plugin" in
