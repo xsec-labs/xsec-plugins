@@ -765,10 +765,13 @@ def build_plugin(
     )
 
     source_revisions = native_sidecar_source_revisions or {}
+    # One effective revision per plugin decides both the retained-Beta contract
+    # and the provenance, so a global revision gets the same-revision check too.
+    source_revision = source_revisions.get(plugin_id, native_sidecar_source_revision)
     recipe, retained_provenance = retained_native_beta_contract(
         recipe_for_source(plugin_id, source_plugin_dir),
         release,
-        source_revisions.get(plugin_id),
+        source_revision,
     )
     if source_only and recipe is not None:
         return
@@ -777,7 +780,7 @@ def build_plugin(
         recipe,
         inputs,
         packed_runtime_inputs or {},
-        source_revisions.get(plugin_id, native_sidecar_source_revision),
+        source_revision,
     )
     if retained_provenance is not None and provenance != retained_provenance:
         raise ValueError(f"retained native Beta sidecars do not match {plugin_id}")
@@ -866,7 +869,14 @@ def retained_native_beta_contract(
     release: dict[str, object],
     source_revision: str | None,
 ) -> tuple[NativeSidecarRecipe | None, dict[str, object] | None]:
-    """Return the signed Beta recipe and provenance for retained sidecars."""
+    """Return the Beta recipe and provenance that a same-revision rebuild must reproduce.
+
+    A native Beta pins its sidecars to the plugin source revision that built
+    them. Rebuilding that revision must reproduce the retained provenance
+    exactly. A different revision returns no retained provenance: it is a new
+    native build, the Beta pointer moves to its release, and the retained
+    release stays in the append-only history.
+    """
 
     if recipe is None or source_revision is None:
         return recipe, None
@@ -888,7 +898,9 @@ def retained_native_beta_contract(
     except (AttributeError, ValueError) as error:
         raise ValueError(f"retained native Beta provenance is invalid for {recipe.plugin_id}: {error}") from error
     if normalized["source"]["revision"] != source_revision:
-        raise ValueError(f"retained native Beta revision does not match {recipe.plugin_id}")
+        # A changed source revision builds fresh, protected sidecars. Nothing in
+        # the retained release is rewritten; it stays in the release history.
+        return recipe, None
     return replace(recipe, targets=targets), normalized
 
 
@@ -926,10 +938,12 @@ def preflight_native_sidecars(
             "plugin manifest name",
         )
         release = load_release_document(plugin_dir / ".xsec-market" / "releases.json", plugin_id)
+        # Same rule as build_plugin: one effective revision per plugin.
+        plugin_source_revision = source_revisions.get(plugin_id, source_revision)
         recipe, retained_provenance = retained_native_beta_contract(
             recipe_for_source(plugin_id, plugin_dir),
             release,
-            source_revisions.get(plugin_id),
+            plugin_source_revision,
         )
         if recipe is None:
             continue
@@ -939,7 +953,7 @@ def preflight_native_sidecars(
                 recipe,
                 native_inputs,
                 packed_runtime_inputs,
-                source_revisions.get(plugin_id, source_revision),
+                plugin_source_revision,
             )
             if retained_provenance is not None and provenance != retained_provenance:
                 raise ValueError(f"retained native Beta sidecars do not match {plugin_id}")
