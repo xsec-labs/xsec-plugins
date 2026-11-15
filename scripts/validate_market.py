@@ -126,6 +126,7 @@ WORKSPACE_TOOL_NAVIGATION_PLUGIN_API_RANGE = "^1.3.0"
 WORKSPACE_COMPOSER_PLUGIN_API_RANGE = "^1.4.0"
 BROWSER_SURFACE_PLUGIN_API_RANGE = "^1.4.0"
 TRAFFIC_PAYLOAD_PLUGIN_API_RANGE = "^1.5.0"
+TERMINAL_MUTATION_PLUGIN_API_RANGE = "^1.7.0"
 BROWSER_SURFACE_METHOD_PREFIX = "xsec.browser.surface."
 BROWSER_PRESENTATION_METHOD = "xsec.browser.presentation.set"
 TRAFFIC_RENDER_HELPERS = frozenset({"u2", "h", "jsx", "jsxs", "createElement"})
@@ -2950,6 +2951,7 @@ def validate_official_frontend(manifest: dict[str, object], source: str, label: 
         WORKSPACE_COMPOSER_PLUGIN_API_RANGE,
         BROWSER_SURFACE_PLUGIN_API_RANGE,
         TRAFFIC_PAYLOAD_PLUGIN_API_RANGE,
+        TERMINAL_MUTATION_PLUGIN_API_RANGE,
     }:
         fail(f"{label} must require plugin API 1.2 or a later supported version")
     frontend_api = desktop.get("frontendApi")

@@ -428,6 +428,17 @@ class MarketplaceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(MarketplaceValidationError, "browser surface methods"):
             validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
+    def test_terminal_frontend_accepts_plugin_api_1_7(self) -> None:
+        """Official frontends may declare Plugin API 1.7, the floor terminal mutations need."""
+
+        plugin_id = "com.xsec.system-terminal"
+        plugin_dir = snapshot_dir(ROOT, plugin_id)
+        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+        source = (plugin_dir / "com.xsec.desktop" / "frontend" / "index.js").read_text(encoding="utf-8")
+        manifest["extensions"]["com.xsec.desktop"]["engines"]["pluginApi"] = "^1.7.0"
+        validate_market.validate_official_frontend(manifest, source, plugin_id)
+
     def build_marketplace(self, destination: Path) -> None:
         """Build a disposable marketplace tree for source-gate assertions."""
 
