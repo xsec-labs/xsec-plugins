@@ -960,6 +960,15 @@ jobs:
                 }
                 native_inputs+=("--native-sidecar-input" "$native_plugin@$rust_target=$binary")
               done < <(printf '%s' "$reconciliation" | jq -rc '.inputs | fromjson | .[]')
+              while IFS= read -r retained_runtime; do
+                rust_target="$(printf '%s' "$retained_runtime" | jq -er .rust_target)"
+                runtime="$(printf '%s' "$retained_runtime" | jq -er .path)"
+                [ -d "$runtime" ] && [ ! -L "$runtime" ] || {
+                  echo "Retained Beta packed runtime is unavailable for $native_plugin@$rust_target." >&2
+                  exit 1
+                }
+                native_inputs+=("--packed-runtime-input" "$native_plugin@$rust_target=$runtime")
+              done < <(printf '%s' "$reconciliation" | jq -rc '.runtimes | fromjson | .[]')
               continue
             fi
             case "$native_plugin" in

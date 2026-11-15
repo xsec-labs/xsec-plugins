@@ -2473,6 +2473,14 @@ export function renderPlaceholder() {}
         )
         self.assertIn('$native_plugin@$target=$binary', steps)
         self.assertIn('--packed-runtime-input', steps)
+        # A retained untargeted Beta that ships a packed runtime (browser) must
+        # hand that runtime to build_market.py too: its preflight requires one
+        # per target, and it checks every native plugin the index lists.
+        retained_branch = steps.split(
+            'if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then\n', 1
+        )[1].split("              continue\n", 1)[0]
+        self.assertIn("jq -rc '.runtimes | fromjson | .[]'", retained_branch)
+        self.assertIn('native_inputs+=("--packed-runtime-input" "$native_plugin@$rust_target=$runtime")', retained_branch)
         self.assertIn('binary-engine', steps)
         self.assertIn('BINARY_ANALYSIS_SOURCE_SHA:', steps)
         self.assertIn('source_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$BINARY_ANALYSIS_SOURCE_SHA")', steps)
