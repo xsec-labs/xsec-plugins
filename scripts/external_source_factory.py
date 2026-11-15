@@ -1706,6 +1706,10 @@ def retained_packed_runtimes(
                     relative = PurePosixPath(info.filename)
                     if not relative.as_posix().startswith(runtime_prefix) or relative.as_posix() == manifest_path:
                         continue
+                    # Same rule as the packed browser runtime check in native_sidecars.py:
+                    # a member must not climb out of its runtime root.
+                    if relative.is_absolute() or ".." in relative.parts:
+                        fail("native Beta packed runtime contains an escaping member")
                     if info.is_dir():
                         continue
                     output = runtime_root / relative.relative_to(runtime_directory)

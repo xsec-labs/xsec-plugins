@@ -452,6 +452,28 @@ class NativeSidecarFactoryTests(unittest.TestCase):
                 # With them, the retained sidecars reproduce the Beta's provenance.
                 build_market.preflight_native_sidecars([entry], inputs, runtimes, SOURCE_REVISION, {}, False)
 
+    def test_retained_packed_runtime_refuses_a_member_that_escapes_its_root(self) -> None:
+        """A crafted runtime member must not be written beside its target runtime root."""
+
+        recipe = native_sidecars.BROWSER_RECIPE
+        with tempfile.TemporaryDirectory(prefix="xsec-browser-runtime-escape-") as directory:
+            root = Path(directory)
+            artifacts_dir = root / ".xsec-factory" / "snapshots" / BROWSER_ID / ".xsec-market" / "artifacts"
+            artifacts_dir.mkdir(parents=True)
+            artifacts = []
+            for target in recipe.targets:
+                name = f"{BROWSER_ID}-{target.rust_target}.xsec-plugin"
+                with zipfile.ZipFile(artifacts_dir / name, "w") as archive:
+                    archive.writestr("runtime/../escape.txt", b"written outside the runtime\n")
+                artifacts.append({"os": target.os_name, "arch": target.arch, "url": f"artifacts/{name}", "sha256": "0" * 64})
+            record = {"artifacts": artifacts}
+            provenance = {"targets": [{"rustTarget": t.rust_target, "runtimeManifestSha256": "0" * 64} for t in recipe.targets]}
+            destination = root / "retained"
+            destination.mkdir()
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "escaping member"):
+                factory.retained_packed_runtimes(root, BROWSER_ID, record, recipe, provenance, destination)
+            self.assertEqual(list(destination.iterdir()), [])
+
     def test_new_source_revision_moves_the_native_beta_and_keeps_its_history(self) -> None:
         """A changed revision is a new native build; the retained Beta stays in history."""
 
