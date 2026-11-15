@@ -8,6 +8,7 @@ import unittest
 import zipfile
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -387,8 +388,8 @@ class NativeSidecarFactoryTests(unittest.TestCase):
             moved_root = root / "moved"
             moved_root.mkdir()
             moved_inputs = sidecar_inputs(moved_root)
-            for binary in moved_inputs.values():
-                binary.write_bytes(b"a sidecar rebuilt at the new revision\n")
+            for (_, rust_target), binary in moved_inputs.items():
+                binary.write_bytes(f"a sidecar rebuilt at the new revision for {rust_target}\n".encode("utf-8"))
             new_revision = "b" * 40
             build_market.build_plugin(
                 source,
@@ -405,9 +406,10 @@ class NativeSidecarFactoryTests(unittest.TestCase):
             moved_release = after["releases"][1]
             self.assertEqual(after["channels"]["beta"], {"releaseId": moved_release["releaseId"]})
             self.assertEqual(moved_release["nativeSidecarProvenance"]["source"]["revision"], new_revision)
+            # Each target keeps its own digest, so the comparison is per rustTarget.
             self.assertEqual(
-                sorted(target["sha256"] for target in moved_release["nativeSidecarProvenance"]["targets"]),
-                sorted(build_market.sha256(path) for path in moved_inputs.values()),
+                {target["rustTarget"]: target["sha256"] for target in moved_release["nativeSidecarProvenance"]["targets"]},
+                {rust_target: build_market.sha256(path) for (_, rust_target), path in moved_inputs.items()},
             )
 
     def test_global_revision_binds_the_same_revision_contract(self) -> None:
@@ -483,6 +485,60 @@ class NativeSidecarFactoryTests(unittest.TestCase):
             moved_release = after["releases"][1]
             self.assertEqual(after["channels"]["beta"], {"releaseId": moved_release["releaseId"]})
             self.assertEqual(moved_release["nativeSidecarProvenance"]["source"]["revision"], new_revision)
+
+    def test_preflight_holds_a_global_revision_to_the_retained_beta(self) -> None:
+        """The preflight applies the same-revision contract before any build writes."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-native-preflight-global-") as directory:
+            root = Path(directory)
+            source = write_attack_path_source(root)
+            snapshots = root / "factory" / ".xsec-factory" / "snapshots"
+            snapshot = snapshots / PLUGIN_ID
+            shutil.copytree(source, snapshot)
+            build_market.build_plugin(
+                source,
+                snapshot,
+                native_sidecar_inputs=sidecar_inputs(root),
+                native_sidecar_source_revision=SOURCE_REVISION,
+            )
+            release_path = snapshot / ".xsec-market" / "releases.json"
+            before = release_path.read_bytes()
+            entry = {"source": {"path": str(snapshot)}}
+
+            with patch.object(build_market, "PLUGIN_ROOT", snapshots):
+                # Sidecars rebuilt at the retained revision with the same bytes pass.
+                reproduced = root / "reproduced"
+                reproduced.mkdir()
+                build_market.preflight_native_sidecars(
+                    [entry],
+                    sidecar_inputs(reproduced),
+                    {},
+                    SOURCE_REVISION,
+                    {},
+                    False,
+                )
+
+                # The snapshot now declares 2.0.1, built with only a global revision
+                # equal to the retained one. Different sidecar bytes must be refused.
+                manifest_path = snapshot / "plugin.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["version"] = "2.0.1"
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                rebuilt = root / "rebuilt"
+                rebuilt.mkdir()
+                rebuilt_inputs = sidecar_inputs(rebuilt)
+                for binary in rebuilt_inputs.values():
+                    binary.write_bytes(b"a different sidecar at the same revision\n")
+                with self.assertRaisesRegex(ValueError, "retained native Beta sidecars do not match"):
+                    build_market.preflight_native_sidecars(
+                        [entry],
+                        rebuilt_inputs,
+                        {},
+                        SOURCE_REVISION,
+                        {},
+                        False,
+                    )
+            self.assertEqual(release_path.read_bytes(), before)
 
     def test_retained_native_beta_reconciliation_reuses_immutable_sidecars(self) -> None:
         """A matching source must not republish a new same-version sidecar build."""
