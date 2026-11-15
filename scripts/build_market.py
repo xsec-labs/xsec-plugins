@@ -765,10 +765,13 @@ def build_plugin(
     )
 
     source_revisions = native_sidecar_source_revisions or {}
+    # One effective revision per plugin decides both the retained-Beta contract
+    # and the provenance, so a global revision gets the same-revision check too.
+    source_revision = source_revisions.get(plugin_id, native_sidecar_source_revision)
     recipe, retained_provenance = retained_native_beta_contract(
         recipe_for_source(plugin_id, source_plugin_dir),
         release,
-        source_revisions.get(plugin_id),
+        source_revision,
     )
     if source_only and recipe is not None:
         return
@@ -777,7 +780,7 @@ def build_plugin(
         recipe,
         inputs,
         packed_runtime_inputs or {},
-        source_revisions.get(plugin_id, native_sidecar_source_revision),
+        source_revision,
     )
     if retained_provenance is not None and provenance != retained_provenance:
         raise ValueError(f"retained native Beta sidecars do not match {plugin_id}")
@@ -935,10 +938,12 @@ def preflight_native_sidecars(
             "plugin manifest name",
         )
         release = load_release_document(plugin_dir / ".xsec-market" / "releases.json", plugin_id)
+        # Same rule as build_plugin: one effective revision per plugin.
+        plugin_source_revision = source_revisions.get(plugin_id, source_revision)
         recipe, retained_provenance = retained_native_beta_contract(
             recipe_for_source(plugin_id, plugin_dir),
             release,
-            source_revisions.get(plugin_id),
+            plugin_source_revision,
         )
         if recipe is None:
             continue
@@ -948,7 +953,7 @@ def preflight_native_sidecars(
                 recipe,
                 native_inputs,
                 packed_runtime_inputs,
-                source_revisions.get(plugin_id, source_revision),
+                plugin_source_revision,
             )
             if retained_provenance is not None and provenance != retained_provenance:
                 raise ValueError(f"retained native Beta sidecars do not match {plugin_id}")
