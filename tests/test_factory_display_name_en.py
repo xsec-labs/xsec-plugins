@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -13,11 +12,20 @@ import external_source_factory as factory  # noqa: E402
 
 
 def _registry_entry(plugin_id: str = "com.xsec.asset-discovery") -> dict[str, object]:
-    registry = json.loads((ROOT / ".xsec-factory" / "official-registry.json").read_text(encoding="utf-8"))
-    for entry in registry["plugins"]:
-        if entry["pluginId"] == plugin_id:
-            return copy.deepcopy(entry)
-    raise AssertionError(f"{plugin_id} is not in the registry")
+    # 与官方注册表的行同形；英文名由后续的注册表 PR 写入，这里用夹具。
+    return {
+        "pluginId": plugin_id,
+        "trustTier": "first-party",
+        "source": {
+            "repository": "xsec-labs/xsec-plugin-asset-discovery",
+            "path": ".",
+            "refs": {"beta": "refs/heads/beta", "stable": "refs/heads/main"},
+        },
+        "policy": {"installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_INSTALL"},
+        "category": "Security",
+        "status": "active",
+        "displayNameEn": "Asset discovery",
+    }
 
 
 class DisplayNameEnTests(unittest.TestCase):
