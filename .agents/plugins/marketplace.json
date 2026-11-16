@@ -14,7 +14,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Asset discovery"
     },
     {
       "name": "com.xsec.attack-path",
@@ -26,7 +27,8 @@
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Attack path"
     },
     {
       "name": "com.xsec.binary-analysis",
@@ -38,7 +40,8 @@
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Binary analysis"
     },
     {
       "name": "com.xsec.jwt-analysis",
@@ -50,7 +53,8 @@
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "JWT analysis"
     },
     {
       "name": "com.xsec.system-terminal",
@@ -62,7 +66,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "System terminal"
     },
     {
       "name": "com.xsec.workspace.approvals",
@@ -74,7 +79,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Approvals"
     },
     {
       "name": "com.xsec.workspace.browser",
@@ -86,7 +92,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Browser sessions"
     },
     {
       "name": "com.xsec.workspace.conversation-tree",
@@ -98,7 +105,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Conversation tree"
     },
     {
       "name": "com.xsec.workspace.files",
@@ -110,7 +118,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Project files"
     },
     {
       "name": "com.xsec.workspace.project-outcomes",
@@ -122,7 +131,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Project outcomes"
     },
     {
       "name": "com.xsec.workspace.sub-agent",
@@ -134,7 +144,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Sub-agent"
     },
     {
       "name": "com.xsec.workspace.traffic",
@@ -146,7 +157,8 @@
         "installation": "INSTALLED_BY_DEFAULT",
         "authentication": "ON_INSTALL"
       },
-      "category": "Security"
+      "category": "Security",
+      "displayNameEn": "Traffic capture"
     }
   ]
 }
