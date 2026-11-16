@@ -474,6 +474,50 @@ class NativeSidecarFactoryTests(unittest.TestCase):
                 factory.retained_packed_runtimes(root, BROWSER_ID, record, recipe, provenance, destination)
             self.assertEqual(list(destination.iterdir()), [])
 
+    def test_retained_packed_runtime_refuses_a_backslash_separator(self) -> None:
+        """A backslash splits into parents on Windows, so the member is refused before extraction."""
+
+        recipe = native_sidecars.BROWSER_RECIPE
+        with tempfile.TemporaryDirectory(prefix="xsec-browser-runtime-backslash-") as directory:
+            root = Path(directory)
+            artifacts_dir = root / ".xsec-factory" / "snapshots" / BROWSER_ID / ".xsec-market" / "artifacts"
+            artifacts_dir.mkdir(parents=True)
+            artifacts = []
+            for target in recipe.targets:
+                name = f"{BROWSER_ID}-{target.rust_target}.xsec-plugin"
+                with zipfile.ZipFile(artifacts_dir / name, "w") as archive:
+                    archive.writestr("runtime/..\\escape.txt", b"written outside the runtime\n")
+                artifacts.append({"os": target.os_name, "arch": target.arch, "url": f"artifacts/{name}", "sha256": "0" * 64})
+            record = {"artifacts": artifacts}
+            provenance = {"targets": [{"rustTarget": t.rust_target, "runtimeManifestSha256": "0" * 64} for t in recipe.targets]}
+            destination = root / "retained"
+            destination.mkdir()
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "escaping member"):
+                factory.retained_packed_runtimes(root, BROWSER_ID, record, recipe, provenance, destination)
+            self.assertEqual(list(destination.iterdir()), [])
+
+    def test_validate_market_refuses_an_unsafe_packed_runtime_member(self) -> None:
+        """The artifact check's runtime extraction applies the member rules of validate_zip_member."""
+
+        recipe = native_sidecars.BROWSER_RECIPE
+        runtime_directory = native_sidecars.packed_runtime_directory(recipe).as_posix()
+        for unsafe_name in (f"{runtime_directory}/../escape.txt", f"{runtime_directory}/..\\escape.txt"):
+            with self.subTest(member=unsafe_name), tempfile.TemporaryDirectory(prefix="xsec-browser-validate-runtime-") as directory:
+                root = Path(directory)
+                source = write_browser_source(root)
+                records = []
+                artifacts = []
+                for target in recipe.targets:
+                    path = root / f"{target.rust_target}.xsec-plugin"
+                    with zipfile.ZipFile(path, "w") as archive:
+                        archive.writestr(native_sidecars.archive_path_for(recipe, target).as_posix(), b"sidecar\n")
+                        archive.writestr(unsafe_name, b"written outside the runtime\n")
+                    record = {"os": target.os_name, "arch": target.arch}
+                    records.append(record)
+                    artifacts.append((path, target.rust_target, record))
+                with self.assertRaisesRegex(validate_market.MarketplaceValidationError, "unsafe packed runtime member"):
+                    validate_market.validate_native_artifact_reproducibility(BROWSER_ID, source, records, artifacts)
+
     def test_new_source_revision_moves_the_native_beta_and_keeps_its_history(self) -> None:
         """A changed revision is a new native build; the retained Beta stays in history."""
 

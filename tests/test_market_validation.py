@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -2482,7 +2483,10 @@ export function renderPlaceholder() {}
         # The whole runtime loop is pinned, including its directory check and its
         # exit: a loop that stopped refusing a missing runtime would not be caught.
         self.assertIn(
-            """              retained_runtimes="$(printf '%s' "$reconciliation" | jq -ec '.runtimes | fromjson')"
+            """              retained_runtimes="$(printf '%s' "$reconciliation" | jq -ec '.runtimes | fromjson | if type == "array" then . else error("retained packed runtimes are not an array") end')" || {
+                echo "Retained Beta packed runtime list is malformed for $native_plugin." >&2
+                exit 1
+              }
               while IFS= read -r retained_runtime; do
                 rust_target="$(printf '%s' "$retained_runtime" | jq -er .rust_target)"
                 runtime="$(printf '%s' "$retained_runtime" | jq -er .path)"
@@ -2534,6 +2538,64 @@ export function renderPlaceholder() {}
                     condition = step.get("if", "")
                     bash_only = "matrix.shell == 'bash'" in condition and "||" not in condition
                     self.assertTrue("shell" in step or bash_only, "run step can reach Windows without a declared shell")
+
+    def test_retained_sidecar_and_runtime_lists_must_be_arrays(self) -> None:
+        """A non-array retained list must fail the step, not run its loop zero times."""
+
+        workflow = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+        start = workflow.index('              retained_inputs="$(printf')
+        end_marker = "done < <(printf '%s' \"$retained_runtimes\" | jq -rc '.[]')\n"
+        block = workflow[start : workflow.index(end_marker, start) + len(end_marker)]
+        script = "\n".join(
+            [
+                "set -eo pipefail",
+                "native_plugin=com.xsec.workspace.browser",
+                "native_inputs=()",
+                'reconciliation="$RECONCILIATION"',
+                block,
+                'printf "%s\\n" "${native_inputs[@]}"',
+            ]
+        ) + "\n"
+        target = "x86_64-unknown-linux-gnu"
+        with tempfile.TemporaryDirectory(prefix="xsec-retained-lists-") as directory:
+            root = Path(directory)
+            sidecar = root / "sidecar"
+            sidecar.write_bytes(b"binary\n")
+            runtime = root / "runtime"
+            runtime.mkdir()
+            inputs = json.dumps([{"rust_target": target, "path": str(sidecar)}])
+            runtimes = json.dumps([{"rust_target": target, "path": str(runtime)}])
+
+            def run(reconciliation: dict[str, str]) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    ["bash", "-c", script],
+                    env={**os.environ, "RECONCILIATION": json.dumps(reconciliation)},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+            accepted = run({"inputs": inputs, "runtimes": runtimes})
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertIn(f"--native-sidecar-input\ncom.xsec.workspace.browser@{target}={sidecar}\n", accepted.stdout)
+            self.assertIn(f"--packed-runtime-input\ncom.xsec.workspace.browser@{target}={runtime}\n", accepted.stdout)
+
+            refused = {
+                "inputs is an object": {"inputs": json.dumps({"rust_target": target}), "runtimes": runtimes},
+                "runtimes is an object": {
+                    "inputs": inputs,
+                    "runtimes": json.dumps({"rust_target": target, "path": str(runtime)}),
+                },
+                "runtimes is missing": {"inputs": inputs},
+                # A scalar makes `.[]` fail inside the unchecked process substitution: the loop was skipped.
+                "runtimes is a string": {"inputs": inputs, "runtimes": json.dumps("not a list")},
+                "inputs is a string": {"inputs": json.dumps("not a list"), "runtimes": runtimes},
+            }
+            for label, reconciliation in refused.items():
+                with self.subTest(label):
+                    result = run(reconciliation)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("malformed", result.stderr)
 
     def test_publish_builds_every_native_sidecar_the_release_requires(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
