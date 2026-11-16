@@ -3487,6 +3487,9 @@ def validate_native_artifact_reproducibility(
                         name = PurePosixPath(info.filename).as_posix()
                         if not name.startswith(f"{runtime_directory}/") or name == f"{runtime_directory}/manifest.json":
                             continue
+                        # The same rules validate_zip_member applies to every archive member.
+                        if "\\" in info.filename or ".." in PurePosixPath(name).parts or PurePosixPath(name).is_absolute():
+                            fail(f"native MCP artifact for {plugin_id} has an unsafe packed runtime member")
                         destination = runtime_root / PurePosixPath(name).relative_to(runtime_directory)
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         destination.write_bytes(archive.read(info))

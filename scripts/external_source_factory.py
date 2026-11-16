@@ -1707,8 +1707,9 @@ def retained_packed_runtimes(
                     if not relative.as_posix().startswith(runtime_prefix) or relative.as_posix() == manifest_path:
                         continue
                     # Same rule as the packed browser runtime check in native_sidecars.py:
-                    # a member must not climb out of its runtime root.
-                    if relative.is_absolute() or ".." in relative.parts:
+                    # a member must not climb out of its runtime root. A backslash is a
+                    # path separator on Windows, so it is refused here as well.
+                    if "\\" in info.filename or relative.is_absolute() or ".." in relative.parts:
                         fail("native Beta packed runtime contains an escaping member")
                     if info.is_dir():
                         continue

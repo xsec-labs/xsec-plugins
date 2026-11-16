@@ -951,6 +951,12 @@ jobs:
               }
               retained_revision="$(printf '%s' "$reconciliation" | jq -er .source_revision)"
               retained_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$retained_revision")
+              # A non-array list must fail here. Inside a process substitution the
+              # loop would otherwise run zero times and the step would still pass.
+              retained_inputs="$(printf '%s' "$reconciliation" | jq -ec '.inputs | fromjson | if type == "array" then . else error("retained sidecar inputs are not an array") end')" || {
+                echo "Retained Beta sidecar list is malformed for $native_plugin." >&2
+                exit 1
+              }
               while IFS= read -r retained; do
                 rust_target="$(printf '%s' "$retained" | jq -er .rust_target)"
                 binary="$(printf '%s' "$retained" | jq -er .path)"
@@ -959,8 +965,12 @@ jobs:
                   exit 1
                 }
                 native_inputs+=("--native-sidecar-input" "$native_plugin@$rust_target=$binary")
-              done < <(printf '%s' "$reconciliation" | jq -rc '.inputs | fromjson | .[]')
-              retained_runtimes="$(printf '%s' "$reconciliation" | jq -ec '.runtimes | fromjson')"
+              done < <(printf '%s' "$retained_inputs" | jq -rc '.[]')
+              # The same guard for the packed runtimes: a non-array must not skip the loop.
+              retained_runtimes="$(printf '%s' "$reconciliation" | jq -ec '.runtimes | fromjson | if type == "array" then . else error("retained packed runtimes are not an array") end')" || {
+                echo "Retained Beta packed runtime list is malformed for $native_plugin." >&2
+                exit 1
+              }
               while IFS= read -r retained_runtime; do
                 rust_target="$(printf '%s' "$retained_runtime" | jq -er .rust_target)"
                 runtime="$(printf '%s' "$retained_runtime" | jq -er .path)"

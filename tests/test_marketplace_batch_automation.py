@@ -114,7 +114,8 @@ class MarketplaceBatchAutomationTests(unittest.TestCase):
             "reconcile-retained-native-beta",
             "--native-sidecar-source-revision-for",
             "Untargeted native plugin $native_plugin does not reproduce its retained Beta.",
-            ".inputs | fromjson | .[]",
+            ".inputs | fromjson | if type == \"array\" then . else error(\"retained sidecar inputs are not an array\") end",
+            "done < <(printf '%s' \"$retained_inputs\" | jq -rc '.[]')",
         ):
             with self.subTest(rule=rule):
                 self.assertIn(rule, workflow)
