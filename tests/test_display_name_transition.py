@@ -130,6 +130,29 @@ class DisplayNameTransitionGitTests(unittest.TestCase):
         with patch.object(verifier, "renewable_sidecars", return_value={SIDECAR}):
             self.assertEqual(self._transition(after)["kind"], "display-name-sync-batch")
 
+    def _signed_base(self, registry_names: dict[str, str], index_names: dict[str, str]) -> None:
+        _write(self.root, REGISTRY, _registry(registry_names))
+        _write(self.root, MARKET, _market(index_names))
+        _write(self.root, SIDECAR, {"signed": True})
+        _git(self.root, "add", "--all")
+        _git(self.root, "commit", "--quiet", "-m", "signed base")
+        self.before = _git(self.root, "rev-parse", "HEAD")
+
+    def test_signed_batch_when_the_registry_already_has_the_name(self) -> None:
+        self._signed_base({"com.xsec.p": "Asset discovery"}, {"com.xsec.p": "Asset"})
+        _write(self.root, MARKET, _market({"com.xsec.p": "Asset discovery"}))
+        _write(self.root, SIDECAR, {"signed": "again"})
+        after = self._commit("batch syncs the index")
+        with patch.object(verifier, "renewable_sidecars", return_value={SIDECAR}):
+            self.assertEqual(self._transition(after)["kind"], "display-name-sync-batch")
+
+    def test_registry_name_edit_while_signed_is_pending(self) -> None:
+        self._signed_base({"com.xsec.p": "Asset"}, {"com.xsec.p": "Asset"})
+        _write(self.root, REGISTRY, _registry({"com.xsec.p": "Asset discovery"}))
+        after = self._commit("registry name before sync")
+        with patch.object(verifier, "renewable_sidecars", return_value={SIDECAR}):
+            self.assertEqual(self._transition(after)["kind"], "display-name-sync")
+
     def test_signed_index_without_resigned_sidecar_is_refused(self) -> None:
         _write(self.root, SIDECAR, {"signed": True})
         _git(self.root, "add", "--all")

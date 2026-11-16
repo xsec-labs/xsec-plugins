@@ -572,7 +572,8 @@ def verify_display_name_sync(root: Path, before: str, after: str, paths: list[st
     if before_registry == after_registry and before_marketplace == after_marketplace:
         return None
     check_display_name_changes(before_registry, after_registry, before_marketplace, after_marketplace)
-    if git_succeeds(root, ["cat-file", "-e", f"{after}:{MARKETPLACE_SIDECAR}"]):
+    index_changed = before_marketplace != after_marketplace
+    if index_changed and git_succeeds(root, ["cat-file", "-e", f"{after}:{MARKETPLACE_SIDECAR}"]):
         expected = renewable_sidecars(root, set()) | {MARKETPLACE_INDEX}
         if before_registry != after_registry:
             expected.add(REGISTRY_PATH)
