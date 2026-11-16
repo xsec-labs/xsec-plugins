@@ -246,8 +246,13 @@ REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256 = {
     # asset-discovery 2.1.2 (Beta 451c027) and 2.2.0 (main f6a82cc): Base UI's
     # AnimationFrame scheduler; every named-callback receiver is bound from
     # useAnimationFrame(), AnimationFrame.create() or new Scheduler.
+    # a80618c9… is the frontend redesign (xsec-plugin-asset-discovery#3): the
+    # same bundled libraries and the same seven named-callback call sites.
     "com.xsec.asset-discovery": frozenset(
-        {"0447e074384cc8f8c5c7df60010c447d744c38f2654ee7702fb0723235788822"}
+        {
+            "0447e074384cc8f8c5c7df60010c447d744c38f2654ee7702fb0723235788822",
+            "a80618c9373feed1dbdc39f9834d480cd45c8ef881375ff4ef93f9cf0ddc4a08",
+        }
     ),
 }
 
