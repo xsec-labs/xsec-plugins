@@ -17,6 +17,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Asset discovery",
       "status": "active"
     },
     {
@@ -35,6 +36,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Attack path",
       "status": "active"
     },
     {
@@ -53,6 +55,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Binary analysis",
       "status": "active"
     },
     {
@@ -71,6 +74,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "JWT analysis",
       "status": "active"
     },
     {
@@ -89,6 +93,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "System terminal",
       "status": "active"
     },
     {
@@ -107,6 +112,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Approvals",
       "status": "active"
     },
     {
@@ -125,6 +131,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Browser sessions",
       "status": "active"
     },
     {
@@ -143,6 +150,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Conversation tree",
       "status": "active"
     },
     {
@@ -161,6 +169,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Project files",
       "status": "active"
     },
     {
@@ -179,6 +188,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Project outcomes",
       "status": "active"
     },
     {
@@ -197,6 +207,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Sub-agent",
       "status": "active"
     },
     {
@@ -215,6 +226,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Security",
+      "displayNameEn": "Traffic capture",
       "status": "active"
     }
   ]
