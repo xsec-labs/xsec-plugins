@@ -553,10 +553,14 @@ def verify_default_set_payloads(
 
 
 def verify_display_name_sync(root: Path, before: str, after: str, paths: list[str]) -> dict[str, object] | None:
-    """Accept a transition that changes only English names; None for anything else."""
+    """Accept a transition that changes only English names; None when it is not one.
 
-    if not paths or not set(paths) <= {REGISTRY_PATH, MARKETPLACE_INDEX}:
-        return None
+    Without a signed Marketplace index, the change may touch only the Registry
+    and the index. Once the index is signed, a name change must be the KMS
+    maintenance batch: the batch's own paths (its re-signed sidecars and the
+    index, plus the Registry only if it changed) must match exactly.
+    """
+
     before_registry = json_blob(root, before, REGISTRY_PATH, "prior Factory registry")
     after_registry = json_blob(root, after, REGISTRY_PATH, "candidate Factory registry")
     before_marketplace = json_blob(root, before, MARKETPLACE_INDEX, "prior Marketplace index")
@@ -565,9 +569,19 @@ def verify_display_name_sync(root: Path, before: str, after: str, paths: list[st
         return None
     if without_display_names(before_marketplace) != without_display_names(after_marketplace):
         return None
+    if before_registry == after_registry and before_marketplace == after_marketplace:
+        return None
     check_display_name_changes(before_registry, after_registry, before_marketplace, after_marketplace)
+    if git_succeeds(root, ["cat-file", "-e", f"{after}:{MARKETPLACE_SIDECAR}"]):
+        expected = renewable_sidecars(root, set()) | {MARKETPLACE_INDEX}
+        if before_registry != after_registry:
+            expected.add(REGISTRY_PATH)
+        if set(paths) != expected or len(paths) != len(expected):
+            fail("display-name sync changed paths outside the KMS-authenticated maintenance batch")
+        return {"kind": "display-name-sync-batch", "plugin_id": None, "promotions": []}
+    if not paths or not set(paths) <= {REGISTRY_PATH, MARKETPLACE_INDEX}:
+        return None
     return {"kind": "display-name-sync", "plugin_id": None, "promotions": []}
-
 
 def verify_default_set_transition(root: Path, before: str, after: str) -> dict[str, object]:
     require_candidate_revisions(root, before, after)
