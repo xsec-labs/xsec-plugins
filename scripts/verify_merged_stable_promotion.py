@@ -478,6 +478,64 @@ def expected_default_marketplace(
     return expected_marketplace
 
 
+# English display names (displayNameEn) are display text only. The default-set
+# maintenance batch copies them from the Registry into the Marketplace index, so
+# they are compared without that key and checked by check_display_name_changes.
+DISPLAY_NAME_KEY = "displayNameEn"
+DISPLAY_NAME_MAX = 80
+
+
+def without_display_names(document: dict[str, object]) -> dict[str, object]:
+    copied = json.loads(json.dumps(document))
+    rows = copied.get("plugins")
+    if not isinstance(rows, list):
+        fail("Factory registry or Marketplace index has no plugin list")
+    for row in rows:
+        if isinstance(row, dict):
+            row.pop(DISPLAY_NAME_KEY, None)
+    return copied
+
+
+def display_names(document: dict[str, object], id_key: str) -> dict[str, str]:
+    rows = document.get("plugins")
+    if not isinstance(rows, list):
+        fail("Factory registry or Marketplace index has no plugin list")
+    names: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict) or DISPLAY_NAME_KEY not in row:
+            continue
+        value = row[DISPLAY_NAME_KEY]
+        if not isinstance(value, str) or not value or value != value.strip() or len(value) > DISPLAY_NAME_MAX or "\x00" in value:
+            fail("displayNameEn must be a non-empty bounded string")
+        plugin_id = row.get(id_key)
+        if not isinstance(plugin_id, str) or plugin_id in names:
+            fail("displayNameEn must belong to one unique plugin")
+        names[plugin_id] = value
+    return names
+
+
+def check_display_name_changes(
+    before_registry: dict[str, object],
+    after_registry: dict[str, object],
+    before_marketplace: dict[str, object],
+    after_marketplace: dict[str, object],
+) -> None:
+    """A Marketplace English name this transition changes must equal the Registry's.
+
+    A Registry-only name edit is pending until the maintenance batch copies it
+    into the index, so an unchanged index entry is not checked.
+    """
+
+    registry_names = display_names(after_registry, "pluginId")
+    before_index = display_names(before_marketplace, "name")
+    after_index = display_names(after_marketplace, "name")
+    for plugin_id in set(before_index) | set(after_index):
+        if before_index.get(plugin_id) == after_index.get(plugin_id):
+            continue
+        if after_index.get(plugin_id) != registry_names.get(plugin_id):
+            fail(f"Marketplace displayNameEn for {plugin_id} does not match the Registry")
+
+
 def verify_default_set_payloads(
     *,
     before_registry: dict[str, object],
@@ -486,16 +544,52 @@ def verify_default_set_payloads(
     after_marketplace: dict[str, object],
 ) -> None:
     expected_registry, project_status = expected_default_registry(before_registry)
-    if after_registry != expected_registry:
+    if without_display_names(after_registry) != without_display_names(expected_registry):
         fail("default-set transition changed an unauthorized Registry entry")
     expected_marketplace = expected_default_marketplace(before_marketplace, project_status)
-    if after_marketplace != expected_marketplace:
+    if without_display_names(after_marketplace) != without_display_names(expected_marketplace):
         fail("default-set transition changed an unauthorized Marketplace entry")
+    check_display_name_changes(before_registry, after_registry, before_marketplace, after_marketplace)
 
+
+def verify_display_name_sync(root: Path, before: str, after: str, paths: list[str]) -> dict[str, object] | None:
+    """Accept a transition that changes only English names; None when it is not one.
+
+    Without a signed Marketplace index, the change may touch only the Registry
+    and the index. Once the index is signed, a name change must be the KMS
+    maintenance batch: the batch's own paths (its re-signed sidecars and the
+    index, plus the Registry only if it changed) must match exactly.
+    """
+
+    before_registry = json_blob(root, before, REGISTRY_PATH, "prior Factory registry")
+    after_registry = json_blob(root, after, REGISTRY_PATH, "candidate Factory registry")
+    before_marketplace = json_blob(root, before, MARKETPLACE_INDEX, "prior Marketplace index")
+    after_marketplace = json_blob(root, after, MARKETPLACE_INDEX, "candidate Marketplace index")
+    if without_display_names(before_registry) != without_display_names(after_registry):
+        return None
+    if without_display_names(before_marketplace) != without_display_names(after_marketplace):
+        return None
+    if before_registry == after_registry and before_marketplace == after_marketplace:
+        return None
+    check_display_name_changes(before_registry, after_registry, before_marketplace, after_marketplace)
+    index_changed = before_marketplace != after_marketplace
+    if index_changed and git_succeeds(root, ["cat-file", "-e", f"{after}:{MARKETPLACE_SIDECAR}"]):
+        expected = renewable_sidecars(root, set()) | {MARKETPLACE_INDEX}
+        if before_registry != after_registry:
+            expected.add(REGISTRY_PATH)
+        if set(paths) != expected or len(paths) != len(expected):
+            fail("display-name sync changed paths outside the KMS-authenticated maintenance batch")
+        return {"kind": "display-name-sync-batch", "plugin_id": None, "promotions": []}
+    if not paths or not set(paths) <= {REGISTRY_PATH, MARKETPLACE_INDEX}:
+        return None
+    return {"kind": "display-name-sync", "plugin_id": None, "promotions": []}
 
 def verify_default_set_transition(root: Path, before: str, after: str) -> dict[str, object]:
     require_candidate_revisions(root, before, after)
     paths = changed_paths(root, before, after)
+    display_sync = verify_display_name_sync(root, before, after, paths)
+    if display_sync is not None:
+        return display_sync
     expected_paths = renewable_sidecars(root, set()) | {MARKETPLACE_INDEX, REGISTRY_PATH}
     if set(paths) != expected_paths or len(paths) != len(expected_paths):
         fail("default-set transition changed paths outside the KMS-authenticated maintenance batch")

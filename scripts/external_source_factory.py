@@ -504,6 +504,8 @@ class Registration:
     authentication: str
     category: str
     status: str
+    # 英文界面显示的插件名（市场清单的 displayNameEn），没有时为空，清单里就不写这个键。
+    display_name_en: str = ""
 
     def ref_for(self, channel: str) -> str:
         if channel == "beta":
@@ -548,7 +550,12 @@ def parse_registration(
 ) -> Registration:
     label = f"official Factory registry plugin at index {index}"
     entry = require_object(value, label)
-    require_exact_keys(entry, {"pluginId", "trustTier", "source", "policy", "category", "status"}, label)
+    optional_keys = {"displayNameEn"} & set(entry)
+    require_exact_keys(
+        {k: v for k, v in entry.items() if k not in optional_keys},
+        {"pluginId", "trustTier", "source", "policy", "category", "status"},
+        label,
+    )
     trust_tier = entry.get("trustTier")
     if trust_tier not in TRUST_TIERS:
         fail(f"{label}.trustTier must be external or first-party")
@@ -589,6 +596,9 @@ def parse_registration(
     if policy.get("authentication") != "ON_INSTALL":
         fail(f"{label}.policy.authentication must be ON_INSTALL")
     category = require_text(entry.get("category"), f"{label}.category", maximum=80)
+    display_name_en = ""
+    if "displayNameEn" in entry:
+        display_name_en = require_text(entry["displayNameEn"], f"{label}.displayNameEn", maximum=80)
     status = entry.get("status")
     allowed_statuses = {"active", "disabled"}
     if trust_tier == "first-party":
@@ -610,6 +620,7 @@ def parse_registration(
         authentication=str(policy["authentication"]),
         category=category,
         status=status,
+        display_name_en=display_name_en,
     )
 
 
@@ -1149,13 +1160,24 @@ def swap_snapshot(root: Path, destination: Path, source_dir: Path) -> None:
                 shutil.rmtree(backup)
 
 
+def without_display_name(entry: object) -> object:
+    """Compare Marketplace entries without displayNameEn: the default-set batch keeps that key in sync with the Registry (verify_merged_stable_promotion.check_display_name_changes)."""
+
+    if not isinstance(entry, dict):
+        return entry
+    return {key: value for key, value in entry.items() if key != "displayNameEn"}
+
+
 def marketplace_entry(registration: Registration) -> dict[str, object]:
-    return {
+    entry: dict[str, object] = {
         "name": registration.plugin_id,
         "source": {"source": "local", "path": f"./.xsec-factory/snapshots/{registration.plugin_id}"},
         "policy": {"installation": registration.installation, "authentication": registration.authentication},
         "category": registration.category,
     }
+    if registration.display_name_en:
+        entry["displayNameEn"] = registration.display_name_en
+    return entry
 
 
 def require_owned_publication(root: Path, registration: Registration) -> None:
@@ -3803,7 +3825,7 @@ def validate_registry_and_snapshots(
         if registration.status == "pending-adoption":
             if registration.trust_tier != "first-party":
                 fail("only a first-party registration may be pending adoption")
-            if entry != marketplace_entry(registration):
+            if without_display_name(entry) != without_display_name(marketplace_entry(registration)):
                 fail(f"pending first-party plugin {registration.plugin_id} must retain its existing marketplace entry")
             if not snapshot.is_dir() or is_link(snapshot):
                 fail(f"pending first-party plugin {registration.plugin_id} snapshot is unavailable")
@@ -3866,7 +3888,7 @@ def validate_registry_and_snapshots(
             if snapshot.exists() or evidence.exists() or proof.exists() or is_link(proof):
                 fail(f"active external official plugin {registration.plugin_id} has an incomplete publication")
             continue
-        elif entry != marketplace_entry(registration):
+        elif without_display_name(entry) != without_display_name(marketplace_entry(registration)):
             fail(f"official marketplace entry for {registration.plugin_id} does not match the external registry")
         if not snapshot.is_dir() or is_link(snapshot):
             fail(f"external official plugin {registration.plugin_id} snapshot is unavailable")
