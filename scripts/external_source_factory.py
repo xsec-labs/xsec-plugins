@@ -1160,6 +1160,14 @@ def swap_snapshot(root: Path, destination: Path, source_dir: Path) -> None:
                 shutil.rmtree(backup)
 
 
+def without_display_name(entry: object) -> object:
+    """Compare Marketplace entries without displayNameEn: the default-set batch keeps that key in sync with the Registry (verify_merged_stable_promotion.check_display_name_changes)."""
+
+    if not isinstance(entry, dict):
+        return entry
+    return {key: value for key, value in entry.items() if key != "displayNameEn"}
+
+
 def marketplace_entry(registration: Registration) -> dict[str, object]:
     entry: dict[str, object] = {
         "name": registration.plugin_id,
@@ -3817,7 +3825,7 @@ def validate_registry_and_snapshots(
         if registration.status == "pending-adoption":
             if registration.trust_tier != "first-party":
                 fail("only a first-party registration may be pending adoption")
-            if entry != marketplace_entry(registration):
+            if without_display_name(entry) != without_display_name(marketplace_entry(registration)):
                 fail(f"pending first-party plugin {registration.plugin_id} must retain its existing marketplace entry")
             if not snapshot.is_dir() or is_link(snapshot):
                 fail(f"pending first-party plugin {registration.plugin_id} snapshot is unavailable")
@@ -3880,7 +3888,7 @@ def validate_registry_and_snapshots(
             if snapshot.exists() or evidence.exists() or proof.exists() or is_link(proof):
                 fail(f"active external official plugin {registration.plugin_id} has an incomplete publication")
             continue
-        elif entry != marketplace_entry(registration):
+        elif without_display_name(entry) != without_display_name(marketplace_entry(registration)):
             fail(f"official marketplace entry for {registration.plugin_id} does not match the external registry")
         if not snapshot.is_dir() or is_link(snapshot):
             fail(f"external official plugin {registration.plugin_id} snapshot is unavailable")

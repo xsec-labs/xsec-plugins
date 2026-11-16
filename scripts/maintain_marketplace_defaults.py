@@ -13,6 +13,7 @@ PROJECT_WORKSPACE_PLUGIN_ID = "com.xsec.project-workspace"
 ATTACK_PATH_PLUGIN_ID = "com.xsec.attack-path"
 MARKETPLACE_PATH = Path(".agents/plugins/marketplace.json")
 REGISTRY_PATH = Path(".xsec-factory/official-registry.json")
+DISPLAY_NAME_KEY = "displayNameEn"
 DEFAULT_POLICY = {"installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_INSTALL"}
 AVAILABLE_POLICY = {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
 
@@ -114,6 +115,33 @@ def make_attack_path_available(registry: dict[str, object], marketplace: dict[st
     return True
 
 
+def sync_display_names(registry: dict[str, object], marketplace: dict[str, object]) -> bool:
+    """Copy each Registry English name into its Marketplace entry; drop a name the Registry no longer has."""
+
+    rows = registry.get("plugins")
+    plugins = marketplace.get("plugins")
+    if not isinstance(rows, list) or not isinstance(plugins, list):
+        fail("official Factory registry and Marketplace index must contain plugin lists")
+    names = {
+        row.get("pluginId"): row[DISPLAY_NAME_KEY]
+        for row in rows
+        if isinstance(row, dict) and DISPLAY_NAME_KEY in row
+    }
+    changed = False
+    for entry in plugins:
+        if not isinstance(entry, dict):
+            continue
+        wanted = names.get(entry.get("name"))
+        if wanted is None:
+            if DISPLAY_NAME_KEY in entry:
+                del entry[DISPLAY_NAME_KEY]
+                changed = True
+        elif entry.get(DISPLAY_NAME_KEY) != wanted:
+            entry[DISPLAY_NAME_KEY] = wanted
+            changed = True
+    return changed
+
+
 def apply_transition(root: Path) -> bool:
     marketplace_path = root / MARKETPLACE_PATH
     registry_path = root / REGISTRY_PATH
@@ -121,6 +149,7 @@ def apply_transition(root: Path) -> bool:
     registry = read_object(registry_path, "official Factory registry")
     changed = disable_project_workspace(registry, marketplace)
     changed = make_attack_path_available(registry, marketplace) or changed
+    changed = sync_display_names(registry, marketplace) or changed
     if changed:
         write_object(registry_path, registry)
         write_object(marketplace_path, marketplace)
