@@ -31,6 +31,21 @@
         "url": "artifacts/com.xsec.binary-analysis-0.2.1-sha256-964615715b93e885-macos-aarch64.xsec-plugin"
       },
       "publisher": "tzf1003"
+    },
+    {
+      "channel": "beta",
+      "releaseId": "sha256-39dfd97b17ae7516ccae6b58380bb3257c1248f9502ae2d4b2f8ca27b9b956a1",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-binary-analysis",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "2fe3366d8e38577801338422c5b928f4ad31cb45"
+      },
+      "artifact": {
+        "sha256": "6a865386b5d199934b894ade651a5801cdb37ac471b4bde2b12dd6f256719f8c",
+        "url": "artifacts/com.xsec.binary-analysis-0.2.2-sha256-6a865386b5d19993-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "tzf1003"
     }
   ]
 }
