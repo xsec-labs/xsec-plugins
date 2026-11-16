@@ -6,6 +6,7 @@
   "plugins": [
     {
       "name": "com.xsec.asset-discovery",
+      "displayNameEn": "Asset discovery",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.asset-discovery"
@@ -18,6 +19,7 @@
     },
     {
       "name": "com.xsec.attack-path",
+      "displayNameEn": "Attack path",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.attack-path"
@@ -30,6 +32,7 @@
     },
     {
       "name": "com.xsec.binary-analysis",
+      "displayNameEn": "Binary analysis",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.binary-analysis"
@@ -42,6 +45,7 @@
     },
     {
       "name": "com.xsec.jwt-analysis",
+      "displayNameEn": "JWT analysis",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.jwt-analysis"
@@ -54,6 +58,7 @@
     },
     {
       "name": "com.xsec.system-terminal",
+      "displayNameEn": "System terminal",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.system-terminal"
@@ -66,6 +71,7 @@
     },
     {
       "name": "com.xsec.workspace.approvals",
+      "displayNameEn": "Approvals",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.workspace.approvals"
@@ -78,6 +84,7 @@
     },
     {
       "name": "com.xsec.workspace.browser",
+      "displayNameEn": "Browser sessions",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.workspace.browser"
@@ -90,6 +97,7 @@
     },
     {
       "name": "com.xsec.workspace.conversation-tree",
+      "displayNameEn": "Conversation tree",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.workspace.conversation-tree"
@@ -102,6 +110,7 @@
     },
     {
       "name": "com.xsec.workspace.files",
+      "displayNameEn": "Project files",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.workspace.files"
@@ -114,6 +123,7 @@
     },
     {
       "name": "com.xsec.workspace.project-outcomes",
+      "displayNameEn": "Project outcomes",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.workspace.project-outcomes"
@@ -126,6 +136,7 @@
     },
     {
       "name": "com.xsec.workspace.sub-agent",
+      "displayNameEn": "Sub-agent",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.workspace.sub-agent"
@@ -138,6 +149,7 @@
     },
     {
       "name": "com.xsec.workspace.traffic",
+      "displayNameEn": "Traffic capture",
       "source": {
         "source": "local",
         "path": "./.xsec-factory/snapshots/com.xsec.workspace.traffic"
