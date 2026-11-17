@@ -16,6 +16,21 @@
         "url": "artifacts/com.xsec.workspace.browser-3.1.0-sha256-dd3496d386151d6b-macos-aarch64.xsec-plugin"
       },
       "publisher": "xsec-marketplace-bot"
+    },
+    {
+      "channel": "beta",
+      "releaseId": "sha256-383fe302d637875611af90dce745f98c0443979845216b942c94573ac142a0d6",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-browser",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "04eba1704ee5886f4742060fb9002b748b4f23ac"
+      },
+      "artifact": {
+        "sha256": "c6b683f5111ff00239b44e962f69cb0299cf065b165312ffb8fb1d7d521c4243",
+        "url": "artifacts/com.xsec.workspace.browser-3.1.1-sha256-c6b683f5111ff002-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "tzf1003"
     }
   ]
 }
