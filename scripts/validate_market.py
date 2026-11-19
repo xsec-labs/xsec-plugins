@@ -236,6 +236,7 @@ APPROVALS_FRONTEND_SOURCE_SHA256_BY_VERSION = {
     "1.3.4": "863a044877a3f2600f67cac69bff084e6d6a36f1aee6e6fc599abdaa8192021e",
     "2.0.0": "863a044877a3f2600f67cac69bff084e6d6a36f1aee6e6fc599abdaa8192021e",
     "2.0.1": "ee1eb068a2f67275a41a208fe49d0634055804a4d144440d72092dac34b410c0",
+    "2.1.0": "fd62d87649a6b9c9f5e1b4225115ec5541eb75d1df6ccaf0a0384fda9fe57725",
 }
 # Bundled UI libraries schedule frames with ``frame.request(callback)``. A
 # callback passed by name cannot be told apart from a host alias called with a
