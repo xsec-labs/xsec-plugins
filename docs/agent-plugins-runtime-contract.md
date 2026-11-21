@@ -77,7 +77,8 @@ handle 不进入快照。历史恢复验收必须覆盖成员权限降低、插�
 | `com.xsec.attack-path` | `xsec-attack-path-mcp` | `bin/attack-path-mcp` | `aarch64-apple-darwin`、`x86_64-apple-darwin`、`x86_64-unknown-linux-gnu`、`x86_64-pc-windows-msvc` |
 | `com.xsec.asset-discovery` | `xsec-asset-discovery-mcp` | `bin/asset-discovery-mcp` | `aarch64-apple-darwin`、`x86_64-apple-darwin`、`x86_64-unknown-linux-gnu`、`x86_64-pc-windows-msvc` |
 
-资产发现的一个 binary 精确承载三个 logical server：`asset-normalize` 无参数运行；
+资产发现的一个 binary 精确承载四个 logical server：`asset-normalize` 无参数运行；
+`asset-pool` 使用 `--pool`，经宿主回调读写资产池与采集任务，不带环境变量；
 `asset-hunter` 使用 `--provider hunter` 与声明的 Hunter API 地址；`asset-fofa` 使用
 `--provider fofa` 与声明的 FOFA API 地址。它们全部以 `${PLUGIN_DATA}` 为 cwd。Factory
 必须逐项校验 command、args、cwd 与 env，不能让 artifact 自行扩展 provider 模式或环境变量。

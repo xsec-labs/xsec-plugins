@@ -142,6 +142,7 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
         servers = {
             "asset-normalize": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "cwd": "${PLUGIN_DATA}"},
             "asset-hunter": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "args": ["--provider", "hunter"], "cwd": "${PLUGIN_DATA}", "env": {"XSEC_ASSET_HUNTER_API_BASE_URL": "https://hunter.qianxin.com/openApi/search"}},
+            "asset-pool": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "args": ["--pool"], "cwd": "${PLUGIN_DATA}"},
             "asset-fofa": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "args": ["--provider", "fofa"], "cwd": "${PLUGIN_DATA}", "env": {"XSEC_ASSET_FOFA_API_BASE_URL": "https://fofoapi.com"}},
         }
         with tempfile.TemporaryDirectory(prefix="xsec-asset-native-") as directory:
@@ -152,6 +153,17 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
             invalid_args["mcpServers"]["asset-hunter"]["args"] = ["--provider", "fofa"]
             with self.assertRaisesRegex(ValueError, "invalid arguments for asset-hunter"):
                 native_sidecars.validate_mcp_declaration(recipe, json.dumps(invalid_args).encode(), "asset mcp.json")
+            invalid_pool = json.loads(raw)
+            invalid_pool["mcpServers"]["asset-pool"]["args"] = ["--provider", "hunter"]
+            with self.assertRaisesRegex(ValueError, "invalid arguments for asset-pool"):
+                native_sidecars.validate_mcp_declaration(recipe, json.dumps(invalid_pool).encode(), "asset mcp.json")
+            without_pool = json.loads(raw)
+            del without_pool["mcpServers"]["asset-pool"]
+            native_sidecars.validate_mcp_declaration(recipe, json.dumps(without_pool).encode(), "asset mcp.json")
+            extra_stdio = json.loads(raw)
+            extra_stdio["mcpServers"]["asset-evil"] = {"type": "stdio", "command": "./bin/asset-discovery-mcp", "cwd": "${PLUGIN_DATA}"}
+            with self.assertRaisesRegex(ValueError, "must declare only the allowlisted stdio servers"):
+                native_sidecars.validate_mcp_declaration(recipe, json.dumps(extra_stdio).encode(), "asset mcp.json")
             for server in (
                 {"remote-asset": {"type": "streamable-http", "url": "https://example.test/mcp"}},
                 {"asset-hunter": {"type": "sse"}},
@@ -160,6 +172,24 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
                 invalid["mcpServers"].update(server)
                 with self.assertRaisesRegex(ValueError, "must declare only the allowlisted stdio servers"):
                     native_sidecars.validate_mcp_declaration(recipe, json.dumps(invalid).encode(), "asset mcp.json")
+            (source / "skills" / recipe.skill_id / "SKILL.md").write_text(f"---\nname: {recipe.skill_id}\n---\n# Native source\n", encoding="utf-8")
+            manifest = json.loads((source / "plugin.json").read_text(encoding="utf-8"))
+            tools = {
+                "asset_discovery_normalize": {"mcpServer": "asset-normalize", "mcpTool": "normalize"},
+                "asset_discovery_hunter": {"mcpServer": "asset-hunter", "mcpTool": "search"},
+                "asset_discovery_fofa": {"mcpServer": "asset-fofa", "mcpTool": "search"},
+            }
+            manifest["extensions"]["com.xsec.desktop"]["contributes"] = {"agentTools": dict(tools)}
+            self.assertTrue(validate_market.validate_native_source(recipe.plugin_id, source, manifest))
+            manifest["extensions"]["com.xsec.desktop"]["contributes"]["agentTools"]["asset_discovery_pool"] = {"mcpServer": "asset-pool", "mcpTool": "runs_list"}
+            self.assertTrue(validate_market.validate_native_source(recipe.plugin_id, source, manifest))
+            for invalid_tools in (
+                {**tools, "asset_discovery_evil": {"mcpServer": "asset-evil", "mcpTool": "run"}},
+                {key: value for key, value in tools.items() if key != "asset_discovery_hunter"},
+            ):
+                manifest["extensions"]["com.xsec.desktop"]["contributes"]["agentTools"] = invalid_tools
+                with self.assertRaisesRegex(validate_market.MarketplaceValidationError, "invalid native MCP Tool binding"):
+                    validate_market.validate_native_source(recipe.plugin_id, source, manifest)
             output = root / "output"
             inputs = sidecar_inputs(root, recipe)
             build_market.build_plugin(source, output, native_sidecar_inputs=inputs, native_sidecar_source_revision=SOURCE_REVISION)

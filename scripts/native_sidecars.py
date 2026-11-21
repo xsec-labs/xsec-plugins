@@ -99,6 +99,10 @@ class NativeStdioServer:
     args: tuple[str, ...] = ()
     env: tuple[tuple[str, str], ...] = ()
     cwd: str = "${PLUGIN_DATA}"
+    # A server the retained Beta may not declare yet. The recipe accepts the
+    # source with or without it, so the release that adds it can be built from
+    # a Beta that has it while the retained snapshot still lacks it.
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -138,6 +142,7 @@ ASSET_DISCOVERY_RECIPE = NativeSidecarRecipe(
     archive_path=PurePosixPath("bin/asset-discovery-mcp"),
     servers=(
         NativeStdioServer("asset-normalize"),
+        NativeStdioServer("asset-pool", args=("--pool",), optional=True),
         NativeStdioServer(
             "asset-hunter",
             args=("--provider", "hunter"),
@@ -932,14 +937,18 @@ def validate_mcp_declaration(
     target: NativeTarget | None = None,
 ) -> None:
     servers = mcp_servers(raw, label)
-    expected_names = {server.server_id for server in recipe.servers}
-    if set(servers.keys()) != expected_names:
+    declared_names = set(servers.keys())
+    required_names = {server.server_id for server in recipe.servers if not server.optional}
+    allowed_names = {server.server_id for server in recipe.servers}
+    if not required_names <= declared_names <= allowed_names:
         raise ValueError(f"{label} must declare only the allowlisted stdio servers")
     for server in servers.values():
         if not isinstance(server, dict) or server.get("type") != "stdio":
             raise ValueError(f"{label} must declare only the allowlisted stdio servers")
     command = mcp_command_for(recipe, target)
     for expected in recipe.servers:
+        if expected.optional and expected.server_id not in servers:
+            continue
         server = servers.get(expected.server_id)
         if not isinstance(server, dict) or server.get("command") != command:
             raise ValueError(f"{label} must declare {expected.server_id} at {command}")
@@ -1072,7 +1081,8 @@ def rewrite_mcp_command(staging: Path, recipe: NativeSidecarRecipe, target: Nati
         document = json.loads(read_regular_mcp(path, f"staged {recipe.plugin_id} mcp.json"))
         servers = document["mcpServers"]
         for server in recipe.servers:
-            servers[server.server_id]["command"] = mcp_command_for(recipe, target)
+            if not server.optional or server.server_id in servers:
+                servers[server.server_id]["command"] = mcp_command_for(recipe, target)
     except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError(f"cannot stage platform MCP declaration for {recipe.plugin_id}: {error}") from error
     path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
