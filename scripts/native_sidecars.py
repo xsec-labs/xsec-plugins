@@ -1081,7 +1081,7 @@ def rewrite_mcp_command(staging: Path, recipe: NativeSidecarRecipe, target: Nati
         document = json.loads(read_regular_mcp(path, f"staged {recipe.plugin_id} mcp.json"))
         servers = document["mcpServers"]
         for server in recipe.servers:
-            if server.server_id in servers:
+            if not server.optional or server.server_id in servers:
                 servers[server.server_id]["command"] = mcp_command_for(recipe, target)
     except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError(f"cannot stage platform MCP declaration for {recipe.plugin_id}: {error}") from error
