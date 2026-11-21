@@ -1,27 +1,27 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "com.xsec.asset-discovery",
-  "version": "2.1.2",
+  "version": "2.3.0",
   "description": "XSEC asset discovery business surface",
   "author": { "name": "XSEC" },
   "license": "MIT",
   "extensions": {
     "com.xsec.desktop": {
-      "schemaVersion": 2,
+      "schemaVersion": 3,
       "displayName": "资产发现",
       "publisher": "XSEC",
       "icon": "compass",
       "engines": { "xsec": ">=0.1.0", "pluginApi": "^1.2.0" },
-      "entrypoints": { "frontend": "./com.xsec.desktop/frontend/index.js" },
+      "entrypoints": { "frontend": "./com.xsec.desktop/frontend/index.js", "native": "builtin:com.xsec.asset-discovery" },
       "activationEvents": ["onRoute:asset-discovery", "onSettingsPage:asset-discovery"],
       "permissions": {
         "workspace.project.read": { "reason": "读取收集任务和资产池" },
-        "workspace.project.write": { "reason": "导入或删除用户选择的资产与收集任务" },
+        "workspace.project.write": { "reason": "导入或删除用户选择的资产与收集任务（含 Agent 发起的导入和删除）" },
         "workspace.session.read": { "reason": "显示资产收集的执行过程与日志" },
-        "process.spawn": { "reason": "按用户确认启动或停止资产收集任务" },
+        "process.spawn": { "reason": "按用户确认启动或停止资产收集任务（含 Agent 发起的收集）" },
         "pluginData.read": { "reason": "读取资产发现的账户级设置" },
         "pluginData.write": { "reason": "保存资产发现设置和凭据" },
-        "mcp.servers.register": { "reason": "注册资产归一化和查询 MCP server" },
+        "mcp.servers.register": { "reason": "注册资产归一化、数据源查询和资产池 MCP server" },
         "native.execute": { "reason": "执行已验证的资产发现 MCP sidecar" },
         "secrets.own.read": { "reason": "将账户凭据注入声明的 MCP server" }
       },
@@ -71,6 +71,51 @@
             "mcpServer": "asset-fofa",
             "mcpTool": "asset_fofa_query",
             "permission": "workspace.project.read"
+          },
+          "asset-runs-list": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_runs_list",
+            "permission": "workspace.project.read"
+          },
+          "asset-run-get": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_run_get",
+            "permission": "workspace.project.read"
+          },
+          "asset-assets-list": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_assets_list",
+            "permission": "workspace.project.read"
+          },
+          "asset-run-start": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_run_start",
+            "permission": "process.spawn"
+          },
+          "asset-run-stop": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_run_stop",
+            "permission": "process.spawn"
+          },
+          "asset-projects-list": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_projects_list",
+            "permission": "workspace.project.read"
+          },
+          "asset-assets-import": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_assets_import",
+            "permission": "workspace.project.write"
+          },
+          "asset-run-delete": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_run_delete",
+            "permission": "workspace.project.write"
+          },
+          "asset-assets-delete": {
+            "mcpServer": "asset-pool",
+            "mcpTool": "asset_discovery_assets_delete",
+            "permission": "workspace.project.write"
           }
         },
         "settingsPages": {
