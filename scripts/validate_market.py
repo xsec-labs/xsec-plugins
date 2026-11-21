@@ -3693,13 +3693,14 @@ def validate_native_source(plugin_id: str, plugin_dir: Path, manifest: dict[str,
     if not isinstance(agent_tools, dict) or not agent_tools:
         fail(f"plugin manifest {plugin_id} native MCP requires agentTool bindings")
     bindings = agent_tools.values()
-    expected_servers = {server.server_id for server in recipe.servers}
+    required_servers = {server.server_id for server in recipe.servers if not server.optional}
+    allowed_servers = {server.server_id for server in recipe.servers}
     actual_servers = {
         item.get("mcpServer")
         for item in bindings
         if isinstance(item, dict) and isinstance(item.get("mcpServer"), str) and item.get("mcpTool")
     }
-    if actual_servers != expected_servers or any(
+    if not required_servers <= actual_servers <= allowed_servers or any(
         not isinstance(item, dict) or not isinstance(item.get("mcpTool"), str) or not item["mcpTool"]
         for item in bindings
     ):

@@ -772,7 +772,8 @@ def normalized_source_mcp(
         document = json.loads(raw)
         servers = document["mcpServers"]
         for server in recipe.servers:
-            servers[server.server_id]["command"] = mcp_command_for(recipe)
+            if server.server_id in servers:
+                servers[server.server_id]["command"] = mcp_command_for(recipe)
     except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise MaterializationError(f"native artifact has an invalid MCP declaration: {error}") from error
     return json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")

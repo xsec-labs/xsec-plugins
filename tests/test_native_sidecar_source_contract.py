@@ -142,6 +142,7 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
         servers = {
             "asset-normalize": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "cwd": "${PLUGIN_DATA}"},
             "asset-hunter": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "args": ["--provider", "hunter"], "cwd": "${PLUGIN_DATA}", "env": {"XSEC_ASSET_HUNTER_API_BASE_URL": "https://hunter.qianxin.com/openApi/search"}},
+            "asset-pool": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "args": ["--pool"], "cwd": "${PLUGIN_DATA}"},
             "asset-fofa": {"type": "stdio", "command": "./bin/asset-discovery-mcp", "args": ["--provider", "fofa"], "cwd": "${PLUGIN_DATA}", "env": {"XSEC_ASSET_FOFA_API_BASE_URL": "https://fofoapi.com"}},
         }
         with tempfile.TemporaryDirectory(prefix="xsec-asset-native-") as directory:
@@ -152,6 +153,13 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
             invalid_args["mcpServers"]["asset-hunter"]["args"] = ["--provider", "fofa"]
             with self.assertRaisesRegex(ValueError, "invalid arguments for asset-hunter"):
                 native_sidecars.validate_mcp_declaration(recipe, json.dumps(invalid_args).encode(), "asset mcp.json")
+            invalid_pool = json.loads(raw)
+            invalid_pool["mcpServers"]["asset-pool"]["args"] = ["--provider", "hunter"]
+            with self.assertRaisesRegex(ValueError, "invalid arguments for asset-pool"):
+                native_sidecars.validate_mcp_declaration(recipe, json.dumps(invalid_pool).encode(), "asset mcp.json")
+            without_pool = json.loads(raw)
+            del without_pool["mcpServers"]["asset-pool"]
+            native_sidecars.validate_mcp_declaration(recipe, json.dumps(without_pool).encode(), "asset mcp.json")
             for server in (
                 {"remote-asset": {"type": "streamable-http", "url": "https://example.test/mcp"}},
                 {"asset-hunter": {"type": "sse"}},
