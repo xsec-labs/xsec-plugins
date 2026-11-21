@@ -1097,6 +1097,11 @@ class MarketplaceValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(MarketplaceValidationError, "unresolved receiver"):
                     validate_market.frontend_host_requests(tokens, "frontend")
 
+    def test_asset_discovery_reviewed_bundles_include_the_retained_and_the_2_3_0_beta(self) -> None:
+        reviewed = validate_market.REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256["com.xsec.asset-discovery"]
+        self.assertIn("0447e074384cc8f8c5c7df60010c447d744c38f2654ee7702fb0723235788822", reviewed)
+        self.assertIn("58254cf17ad17cbb79191a59dcc53f0be00a36f0ad2be0f0a478d5ef158c596e", reviewed)
+
     def test_frontend_named_scheduler_callbacks_require_a_reviewed_source(self) -> None:
         plugin_id = "com.xsec.asset-discovery"
         reviewed = validate_market.REVIEWED_CALLBACK_SCHEDULER_FRONTEND_SOURCE_SHA256[plugin_id]
