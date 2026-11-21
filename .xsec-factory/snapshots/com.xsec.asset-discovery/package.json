@@ -1,6 +1,6 @@
 {
   "name": "@xsec/plugin-asset-discovery",
-  "version": "2.1.2",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "scripts": {

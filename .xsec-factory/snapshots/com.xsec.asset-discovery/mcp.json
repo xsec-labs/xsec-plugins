@@ -15,6 +15,12 @@
         "XSEC_ASSET_HUNTER_API_BASE_URL": "https://hunter.qianxin.com/openApi/search"
       }
     },
+    "asset-pool": {
+      "type": "stdio",
+      "command": "./bin/asset-discovery-mcp",
+      "args": ["--pool"],
+      "cwd": "${PLUGIN_DATA}"
+    },
     "asset-fofa": {
       "type": "stdio",
       "command": "./bin/asset-discovery-mcp",

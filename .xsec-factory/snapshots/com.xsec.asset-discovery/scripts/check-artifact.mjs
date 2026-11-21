@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const NATIVE_PERMISSIONS = ["mcp.servers.register", "native.execute"];
-const MCP_SERVERS = ["asset-fofa", "asset-hunter", "asset-normalize"];
+const MCP_SERVERS = ["asset-fofa", "asset-hunter", "asset-normalize", "asset-pool"];
 const artifact = new URL("../com.xsec.desktop/frontend/index.js", import.meta.url);
 const manifestPath = new URL("../plugin.json", import.meta.url);
 const codexManifestPath = new URL("../.codex-plugin/plugin.json", import.meta.url);
@@ -40,8 +40,8 @@ if (!releaseVersions.every((version) => typeof version === "string" && SEMVER_PA
   throw new Error("资产发现发布元数据必须使用一致的有效 SemVer 版本");
 }
 const desktop = manifest.extensions?.["com.xsec.desktop"];
-if (desktop?.schemaVersion !== 2 || !NATIVE_PERMISSIONS.every((permission) => desktop.permissions?.[permission])) {
-  throw new Error("资产发现必须声明 schema v2 原生 MCP 权限");
+if (desktop?.schemaVersion !== 3 || !NATIVE_PERMISSIONS.every((permission) => desktop.permissions?.[permission])) {
+  throw new Error("资产发现必须声明 schema v3 原生 MCP 权限");
 }
 const servers = Object.keys(mcp.mcpServers ?? {}).sort();
 if (JSON.stringify(servers) !== JSON.stringify(MCP_SERVERS)) {
