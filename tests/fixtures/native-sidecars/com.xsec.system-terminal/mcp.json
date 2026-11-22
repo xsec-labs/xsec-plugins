@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "system-terminal": {
+      "type": "stdio",
+      "command": "./bin/system-terminal-mcp",
+      "cwd": "${PLUGIN_DATA}"
+    }
+  }
+}
