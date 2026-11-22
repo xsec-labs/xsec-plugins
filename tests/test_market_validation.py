@@ -2478,10 +2478,12 @@ export function renderPlaceholder() {}
             steps.index(unlisted_guard),
             steps.index('if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then'),
         )
-        # A native whose retained snapshot has no mcp.json takes no part in
-        # another plugin's run, so it is skipped before the retained-Beta branch.
+        # The system terminal's retained snapshot has no mcp.json, so it takes no
+        # part in another plugin's run and is skipped before the retained-Beta
+        # branch. The exemption names only that plugin.
         snapshot_guard = (
-            'if [ "$native_plugin" != "$TARGET_PLUGIN_ID" ] && '
+            'if [ "$native_plugin" = "com.xsec.system-terminal" ] && '
+            '[ "$native_plugin" != "$TARGET_PLUGIN_ID" ] && '
             '[ ! -f ".xsec-factory/snapshots/$native_plugin/mcp.json" ]; then'
         )
         self.assertIn(snapshot_guard, steps)

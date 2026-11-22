@@ -943,11 +943,13 @@ jobs:
             if ! jq -e --arg id "$native_plugin" '.plugins | any(.name == $id)' .agents/plugins/marketplace.json >/dev/null; then
               continue
             fi
-            # A registered native whose retained snapshot has no mcp.json is not
-            # a native plugin yet. It has no sidecar to reproduce, so it takes no
-            # part in another plugin's run; its own publication replaces the
-            # snapshot, after which it is retained like the other natives.
-            if [ "$native_plugin" != "$TARGET_PLUGIN_ID" ] && [ ! -f ".xsec-factory/snapshots/$native_plugin/mcp.json" ]; then
+            # The system terminal's retained snapshot is its 2.0.0 source, which
+            # predates the native contract and has no mcp.json. It is not a
+            # native plugin yet: it has no sidecar to reproduce, so it takes no
+            # part in another plugin's run. Its own publication replaces the
+            # snapshot, after which it is retained like the other natives. No
+            # other native may skip for want of mcp.json; the missing file fails.
+            if [ "$native_plugin" = "com.xsec.system-terminal" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ] && [ ! -f ".xsec-factory/snapshots/$native_plugin/mcp.json" ]; then
               continue
             fi
             if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then
