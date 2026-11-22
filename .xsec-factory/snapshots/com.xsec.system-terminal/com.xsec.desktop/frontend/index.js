@@ -141,9 +141,10 @@ async function poll(host, state) {
   let nextDelay = 0;
   state.reading = true;
   try {
-    const data = await host.request("xsec.terminal.read", { terminalId });
+    const data = await host.request("xsec.terminal.read", state.cursor === undefined ? { terminalId } : { terminalId, cursor: state.cursor });
     if (!isCurrentTerminal(state, generation, terminalId)) return;
     if (data?.data) appendScreen(state, data.data);
+    if (typeof data?.next_cursor === "number") state.cursor = data.next_cursor;
     nextDelay = data?.data ? ACTIVE_POLL_INTERVAL_MS : IDLE_POLL_INTERVAL_MS;
   } catch (error) {
     if (isCurrentTerminal(state, generation, terminalId)) {
@@ -167,7 +168,7 @@ async function openTerminal(host, state, generation) {
       await host.request("xsec.terminal.close", { terminalId: handle.terminal_id });
       return;
     }
-    state.terminalId = handle.terminal_id;
+    state.terminalId = handle.terminal_id; state.cursor = undefined;
     state.controls.screen.focus();
     resizeTerminal(host, state);
     schedulePoll(host, state, 0);
@@ -272,7 +273,7 @@ function terminalSurface(host) {
   const state = {
     root: undefined, controls: {}, terminalId: "", disposed: false, failed: false,
     reading: false, writing: false, inputBuffer: "", pollTimer: 0,
-    resizeTimer: 0, resizeGeneration: 0, inputFrame: 0, observer: undefined, visibility: undefined,
+    resizeTimer: 0, resizeGeneration: 0, inputFrame: 0, observer: undefined, visibility: undefined, cursor: undefined,
     theme: undefined, opening: undefined, generation: 0,
   };
   return {
