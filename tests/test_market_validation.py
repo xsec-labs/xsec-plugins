@@ -440,6 +440,35 @@ class MarketplaceValidationTests(unittest.TestCase):
         manifest["extensions"]["com.xsec.desktop"]["engines"]["pluginApi"] = "^1.7.0"
         validate_market.validate_official_frontend(manifest, source, plugin_id)
 
+    @requires_publication
+    def test_terminal_frontend_accepts_plugin_api_1_9(self) -> None:
+        """Official frontends may declare Plugin API 1.9, the floor of the lease-free terminal."""
+
+        plugin_id = "com.xsec.system-terminal"
+        plugin_dir = snapshot_dir(ROOT, plugin_id)
+        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+        source = (plugin_dir / "com.xsec.desktop" / "frontend" / "index.js").read_text(encoding="utf-8")
+        manifest["extensions"]["com.xsec.desktop"]["engines"]["pluginApi"] = "^1.9.0"
+        validate_market.validate_official_frontend(manifest, source, plugin_id)
+
+    @requires_publication
+    def test_host_consumed_terminal_rpcs_are_exempt_only_for_the_terminal(self) -> None:
+        """Desktop's native terminal consumes RPCs the webview never requests; only the terminal may omit them."""
+
+        plugin_id = "com.xsec.system-terminal"
+        plugin_dir = snapshot_dir(ROOT, plugin_id)
+        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+        source = (plugin_dir / "com.xsec.desktop" / "frontend" / "index.js").read_text(encoding="utf-8")
+        desktop = manifest["extensions"]["com.xsec.desktop"]
+        desktop["engines"]["pluginApi"] = "^1.9.0"
+        methods = desktop["frontendApi"]["methods"]
+        for name in ("attach", "detach", "list", "profiles", "reveal"):
+            methods[f"xsec.terminal.{name}"] = dict(methods["xsec.terminal.read"])
+        validate_market.validate_official_frontend(manifest, source, plugin_id)
+        manifest["name"] = "com.example.other-terminal"
+        with self.assertRaisesRegex(MarketplaceValidationError, "does not reference declared RPC methods"):
+            validate_market.validate_official_frontend(manifest, source, "com.example.other-terminal")
+
     def build_marketplace(self, destination: Path) -> None:
         """Build a disposable marketplace tree for source-gate assertions."""
 
