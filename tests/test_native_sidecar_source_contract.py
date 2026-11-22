@@ -137,6 +137,32 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must declare attack-path"):
                 native_sidecars.recipe_for_source(recipe.plugin_id, source)
 
+    def test_system_terminal_native_contract_pins_its_single_stdio_server(self) -> None:
+        recipe = native_sidecars.SYSTEM_TERMINAL_RECIPE
+        self.assertIs(native_sidecars.RECIPES[recipe.plugin_id], recipe)
+        self.assertEqual(
+            [target.rust_target for target in recipe.targets],
+            ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"],
+        )
+        self.assertEqual(str(native_sidecars.archive_path_for(recipe, recipe.targets[-1])), "bin/system-terminal-mcp.exe")
+        servers = {"system-terminal": {"type": "stdio", "command": "./bin/system-terminal-mcp", "cwd": "${PLUGIN_DATA}"}}
+        with tempfile.TemporaryDirectory(prefix="xsec-system-terminal-native-") as directory:
+            source = write_native_source(Path(directory), recipe, servers)
+            raw = (source / "mcp.json").read_bytes()
+            native_sidecars.validate_mcp_declaration(recipe, raw, "system-terminal mcp.json")
+            with_args = json.loads(raw)
+            with_args["mcpServers"]["system-terminal"]["args"] = ["--shell", "/bin/sh"]
+            with self.assertRaisesRegex(ValueError, "invalid arguments for system-terminal"):
+                native_sidecars.validate_mcp_declaration(recipe, json.dumps(with_args).encode(), "system-terminal mcp.json")
+            extra_stdio = json.loads(raw)
+            extra_stdio["mcpServers"]["system-terminal-extra"] = {
+                "type": "stdio",
+                "command": "./bin/system-terminal-mcp",
+                "cwd": "${PLUGIN_DATA}",
+            }
+            with self.assertRaisesRegex(ValueError, "must declare only the allowlisted stdio servers"):
+                native_sidecars.validate_mcp_declaration(recipe, json.dumps(extra_stdio).encode(), "system-terminal mcp.json")
+
     def test_asset_discovery_native_contract_builds_all_platform_artifacts(self) -> None:
         recipe = native_sidecars.ASSET_DISCOVERY_RECIPE
         servers = {

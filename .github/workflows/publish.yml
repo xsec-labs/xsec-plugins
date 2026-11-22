@@ -413,7 +413,7 @@ jobs:
           esac
           output_dir="$RUNNER_TEMP/xsec-native-sidecars"
           mkdir -p "$output_dir"
-          for sidecar_cmd in attack-path-mcp asset-discovery-mcp browser-mcp; do
+          for sidecar_cmd in attack-path-mcp asset-discovery-mcp browser-mcp system-terminal-mcp; do
             if [ ! -d ".xsec-desktop-source/go/cmd/$sidecar_cmd" ]; then
               echo "xSecDesktop source is missing go/cmd/$sidecar_cmd; the pinned xSecDesktop commit must contain the Go sidecar packages." >&2
               exit 1
@@ -425,13 +425,16 @@ jobs:
             go build -trimpath -o "$output_dir/attack-path-mcp" ./cmd/attack-path-mcp
             go build -trimpath -o "$output_dir/asset-discovery-mcp" ./cmd/asset-discovery-mcp
             go build -trimpath -o "$output_dir/browser-mcp" ./cmd/browser-mcp
+            go build -trimpath -o "$output_dir/system-terminal-mcp" ./cmd/system-terminal-mcp
           )
           [ -f "$output_dir/attack-path-mcp" ] && [ ! -L "$output_dir/attack-path-mcp" ] && [ -s "$output_dir/attack-path-mcp" ]
           [ -f "$output_dir/asset-discovery-mcp" ] && [ ! -L "$output_dir/asset-discovery-mcp" ] && [ -s "$output_dir/asset-discovery-mcp" ]
           [ -f "$output_dir/browser-mcp" ] && [ ! -L "$output_dir/browser-mcp" ] && [ -s "$output_dir/browser-mcp" ]
+          [ -f "$output_dir/system-terminal-mcp" ] && [ ! -L "$output_dir/system-terminal-mcp" ] && [ -s "$output_dir/system-terminal-mcp" ]
           chmod 0755 "$output_dir/attack-path-mcp"
           chmod 0755 "$output_dir/asset-discovery-mcp"
           chmod 0755 "$output_dir/browser-mcp"
+          chmod 0755 "$output_dir/system-terminal-mcp"
           corepack enable
           # Corepack picks the pnpm version from the package.json in the current
           # directory, so run pnpm inside the Desktop checkout (pnpm@10 there).
@@ -474,7 +477,7 @@ jobs:
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
-          foreach ($sidecarCmd in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp') {
+          foreach ($sidecarCmd in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp', 'system-terminal-mcp') {
             if (-not (Test-Path -LiteralPath (Join-Path '.xsec-desktop-source\go\cmd' $sidecarCmd) -PathType Container)) {
               throw "xSecDesktop source is missing go\cmd\$sidecarCmd; the pinned xSecDesktop commit must contain the Go sidecar packages."
             }
@@ -487,9 +490,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Asset-discovery MCP build failed' }
             go build -trimpath -o (Join-Path $outputDirectory 'browser-mcp') ./cmd/browser-mcp
             if ($LASTEXITCODE -ne 0) { throw 'Browser MCP build failed' }
+            go build -trimpath -o (Join-Path $outputDirectory 'system-terminal-mcp') ./cmd/system-terminal-mcp
+            if ($LASTEXITCODE -ne 0) { throw 'System-terminal MCP build failed' }
           }
           finally { Pop-Location }
-          foreach ($name in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp') {
+          foreach ($name in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp', 'system-terminal-mcp') {
             if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory $name) -PathType Leaf)) { throw "$name binary is unavailable" }
           }
           corepack enable
@@ -929,13 +934,22 @@ jobs:
           native_inputs=()
           retained_revisions=()
           source_revisions=()
-          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis com.xsec.jwt-analysis; do
+          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis com.xsec.jwt-analysis com.xsec.system-terminal; do
             # build_market.py accepts sidecar inputs only for native plugins
             # that the discovery index lists. Before a plugin's first
             # publication it has no index entry and no retained snapshot, so
             # it takes no part in this run. An external Beta target is
             # already staged into the index above.
             if ! jq -e --arg id "$native_plugin" '.plugins | any(.name == $id)' .agents/plugins/marketplace.json >/dev/null; then
+              continue
+            fi
+            # The system terminal's retained snapshot is its 2.0.0 source, which
+            # predates the native contract and has no mcp.json. It is not a
+            # native plugin yet: it has no sidecar to reproduce, so it takes no
+            # part in another plugin's run. Its own publication replaces the
+            # snapshot, after which it is retained like the other natives. No
+            # other native may skip for want of mcp.json; the missing file fails.
+            if [ "$native_plugin" = "com.xsec.system-terminal" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ] && [ ! -f ".xsec-factory/snapshots/$native_plugin/mcp.json" ]; then
               continue
             fi
             if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then
@@ -986,6 +1000,7 @@ jobs:
               com.xsec.attack-path) binary_name="attack-path-mcp" ;;
               com.xsec.asset-discovery) binary_name="asset-discovery-mcp" ;;
               com.xsec.workspace.browser) binary_name="browser-mcp" ;;
+              com.xsec.system-terminal) binary_name="system-terminal-mcp" ;;
               com.xsec.binary-analysis) binary_name="binary-analysis-mcp" ;;
               com.xsec.jwt-analysis)
                 echo "The protected builder does not build the jwt-analysis sidecar yet; com.xsec.jwt-analysis cannot be published from fresh sources." >&2

@@ -17,6 +17,20 @@ from native_sidecars import RECIPES, sha256_file
 from publication_gate import requires_publication
 
 
+def sidecar_fixture(plugin_id: str) -> Path:
+    """Return the manifests a recipe's source is tested with.
+
+    A retained snapshot that predates the native contract has no mcp.json, and the
+    publish sign step skips it for the same reason. Such a plugin is tested with its
+    declared native contract instead (tests/fixtures/native-sidecars, copied from
+    xsec-labs/xsec-plugin-system-terminal at a62bfe77).
+    """
+    snapshot = ROOT / ".xsec-factory" / "snapshots" / plugin_id
+    if (snapshot / "mcp.json").is_file():
+        return snapshot
+    return ROOT / "tests" / "fixtures" / "native-sidecars" / plugin_id
+
+
 class DevelopmentPreparationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="xsec-development-test-")
@@ -27,7 +41,7 @@ class DevelopmentPreparationTests(unittest.TestCase):
             source = self.factory / "plugins" / plugin_id
             source.mkdir(parents=True)
             for name in ("plugin.json", "mcp.json"):
-                shutil.copyfile(ROOT / ".xsec-factory" / "snapshots" / plugin_id / name, source / name)
+                shutil.copyfile(sidecar_fixture(plugin_id) / name, source / name)
             subprocess.run(["git", "init", "--quiet", str(source)], check=True)
 
     def destination(self) -> Path:

@@ -2462,10 +2462,11 @@ export function renderPlaceholder() {}
         self.assertIn("CGO_ENABLED=0", sidecar_job)
         self.assertIn("./cmd/attack-path-mcp", sidecar_job)
         self.assertIn("./cmd/asset-discovery-mcp", sidecar_job)
+        self.assertIn("./cmd/system-terminal-mcp", sidecar_job)
         self.assertIn("xsec-native-sidecars-${{ matrix.rust_target }}", sidecar_job)
         self.assertIn(
             'for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser '
-            'com.xsec.binary-analysis com.xsec.jwt-analysis; do',
+            'com.xsec.binary-analysis com.xsec.jwt-analysis com.xsec.system-terminal; do',
             steps,
         )
         # A native plugin without a discovery entry has not been published
@@ -2475,6 +2476,20 @@ export function renderPlaceholder() {}
         self.assertIn(unlisted_guard, steps)
         self.assertLess(
             steps.index(unlisted_guard),
+            steps.index('if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then'),
+        )
+        # The system terminal's retained snapshot has no mcp.json, so it takes no
+        # part in another plugin's run and is skipped before the retained-Beta
+        # branch. The exemption names only that plugin.
+        snapshot_guard = (
+            'if [ "$native_plugin" = "com.xsec.system-terminal" ] && '
+            '[ "$native_plugin" != "$TARGET_PLUGIN_ID" ] && '
+            '[ ! -f ".xsec-factory/snapshots/$native_plugin/mcp.json" ]; then'
+        )
+        self.assertIn(snapshot_guard, steps)
+        self.assertLess(steps.index(unlisted_guard), steps.index(snapshot_guard))
+        self.assertLess(
+            steps.index(snapshot_guard),
             steps.index('if [ "$EXTERNAL" = "true" ] && [ "$native_plugin" != "$TARGET_PLUGIN_ID" ]; then'),
         )
         self.assertIn('$native_plugin@$target=$binary', steps)
@@ -2607,9 +2622,9 @@ export function renderPlaceholder() {}
         batch = (ROOT / ".github" / "workflows" / "publish-marketplace-batch.yml").read_text(encoding="utf-8")
         sidecar_job = workflow.split("  build-native-sidecars:\n", 1)[1].split("  sign-and-publish:\n", 1)[0]
         signing_job = workflow.split("  sign-and-publish:\n", 1)[1]
-        # The release step requires these four sidecars on every target,
+        # The release step requires these sidecars on every target,
         # including Windows, under their extensionless input names.
-        for binary in ("attack-path-mcp", "asset-discovery-mcp", "browser-mcp", "binary-analysis-mcp"):
+        for binary in ("attack-path-mcp", "asset-discovery-mcp", "browser-mcp", "binary-analysis-mcp", "system-terminal-mcp"):
             self.assertIn(f'binary_name="{binary}"', signing_job)
             self.assertIn(f'"$output_dir/{binary}"', sidecar_job)
             self.assertIn(f"(Join-Path $outputDirectory '{binary}')", sidecar_job)
