@@ -101,21 +101,91 @@ class FrontendContractTests(unittest.TestCase):
         dispose = dispose.split("function terminalSurface", 1)[0]
         self.assertLess(dispose.index("cancelAnimationFrame(state.inputFrame)"), dispose.index("state.inputFrame = 0"))
 
-    def test_manifest_versions_and_frontend_methods_match(self) -> None:
+    def test_manifest_declares_every_method_the_frontend_and_native_panel_call(self) -> None:
         manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))
         codex = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "2.0.0")
-        self.assertEqual(manifest["extensions"]["com.xsec.desktop"]["schemaVersion"], 2)
-        self.assertNotIn("agentTools", manifest["extensions"]["com.xsec.desktop"]["contributes"])
+        self.assertEqual(manifest["version"], "2.1.0")
+        desktop = manifest["extensions"]["com.xsec.desktop"]
+        self.assertEqual(desktop["schemaVersion"], 3)
+        self.assertEqual(desktop["entrypoints"]["native"], "builtin:com.xsec.system-terminal")
+        agent_tools = manifest["extensions"]["com.xsec.desktop"]["contributes"]["agentTools"]
+        self.assertEqual(
+            sorted(tool["mcpTool"] for tool in agent_tools.values()),
+            sorted(
+                [
+                    "terminal_close",
+                    "terminal_list",
+                    "terminal_open",
+                    "terminal_profiles",
+                    "terminal_read",
+                    "terminal_resize",
+                    "terminal_reveal",
+                    "terminal_write",
+                ]
+            ),
+        )
+        self.assertEqual({tool["mcpServer"] for tool in agent_tools.values()}, {"system-terminal"})
         self.assertEqual(manifest["version"], codex["version"])
         methods = manifest["extensions"]["com.xsec.desktop"]["frontendApi"]["methods"]
         requested = set(re.findall(r'host\.request\("([^"]+)"', self.source))
-        self.assertEqual(requested, set(methods))
+        self.assertLessEqual(requested, set(methods))
+        # The native panel and the Agent tools call these Host methods too; the Broker refuses any not declared here.
+        panel_and_agent = {
+            "xsec.terminal.profiles",
+            "xsec.terminal.open",
+            "xsec.terminal.list",
+            "xsec.terminal.read",
+            "xsec.terminal.write",
+            "xsec.terminal.resize",
+            "xsec.terminal.attach",
+            "xsec.terminal.detach",
+            "xsec.terminal.reveal",
+            "xsec.terminal.close",
+        }
+        self.assertLessEqual(panel_and_agent, set(methods))
+
+    def test_plugin_api_lower_bound_excludes_lease_era_hosts(self) -> None:
+        """The control-less calls need a 1.9.0 host.
+
+        Hosts at Plugin API 1.8.0 (Desktop 0.3.8 among them) still require a control lease on
+        write, resize and close, so the lower bound must exclude them. The host rule that
+        needs at least 1.7.0 for terminal mutations is a weaker check and still holds.
+        """
+
+        desktop = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))["extensions"]["com.xsec.desktop"]
+        mutations = {
+            method
+            for method in desktop["frontendApi"]["methods"]
+            if method in {"xsec.terminal.write", "xsec.terminal.resize", "xsec.terminal.close"}
+        }
+        self.assertTrue(mutations, "the frontend must declare at least one terminal mutation")
+        plugin_api = desktop["engines"]["pluginApi"]
+        self.assertRegex(plugin_api, r"^\^\d+\.\d+\.\d+$")
+        lower = tuple(int(part) for part in plugin_api[1:].split("."))
+        self.assertGreaterEqual(lower, (1, 9, 0))
+
+    def test_manifest_declares_no_control_methods(self) -> None:
+        """The control lease is gone: no frontend method and no Agent tool may name it."""
+
+        desktop = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))["extensions"]["com.xsec.desktop"]
+        self.assertEqual([m for m in desktop["frontendApi"]["methods"] if m.startswith("xsec.terminal.control.")], [])
+        self.assertEqual([n for n, b in desktop["contributes"]["agentTools"].items() if "control" in b["mcpTool"]], [])
 
     def test_activation_returns_explicit_lifecycle_helpers(self) -> None:
         activation = self.source.split("export function activate(host)", 1)[1]
         self.assertIn('return terminalSettings(host)', activation)
         self.assertIn('return terminalSurface(host)', activation)
+
+    def test_terminal_calls_send_no_lease_and_read_from_the_cursor(self) -> None:
+        """Terminal calls carry no control lease; read must advance from the cursor."""
+
+        self.assertIsNone(re.search(r"\bcontrol\b", self.source))
+        self.assertIn('host.request("xsec.terminal.write", { terminalId, data })', self.source)
+        self.assertIn("terminalId,\n    ...terminalSize(state),", self.source)
+        self.assertEqual(self.source.count('"xsec.terminal.close", { terminalId })'), 2)
+        self.assertIn('"xsec.terminal.close", { terminalId: handle.terminal_id }', self.source)
+        self.assertIn("{ terminalId, cursor: state.cursor }", self.source)
+        self.assertIn("state.cursor = data.next_cursor", self.source)
 
     def test_source_respects_workspace_complexity_limits(self) -> None:
         lines = self.source.splitlines()
