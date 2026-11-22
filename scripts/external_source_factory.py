@@ -2088,8 +2088,8 @@ def validate_adoption(
     root: Path,
     registration: Registration,
     *,
-    require_kms_proof: bool = False,
-    require_active_release_sidecar: bool = False,
+    require_kms_proof: bool = True,
+    require_active_release_sidecar: bool = True,
 ) -> None:
     if registration.trust_tier != "first-party" or first_party_fresh(root, registration):
         return
@@ -2530,8 +2530,8 @@ def validate_status(
     root: Path,
     registration: Registration,
     *,
-    require_publication_proofs: bool = False,
-    require_active_release_sidecar: bool = False,
+    require_publication_proofs: bool = True,
+    require_active_release_sidecar: bool = True,
 ) -> None:
     path = status_path(root, registration.plugin_id)
     if not path.exists():
@@ -3277,6 +3277,8 @@ def needs_smoke_redispatch(
     *,
     beta_sha: str,
     beta_release_id: str,
+    require_publication_proofs: bool = True,
+    require_active_release_sidecar: bool = True,
 ) -> dict[str, str]:
     """Report whether an already-signed Beta needs its lost smoke dispatch replayed.
 
@@ -3291,7 +3293,14 @@ def needs_smoke_redispatch(
     expected_beta_sha = safe_sha(beta_sha, "smoke redispatch Beta source SHA")
     if not isinstance(beta_release_id, str) or not RELEASE_ID_PATTERN.fullmatch(beta_release_id):
         fail("smoke redispatch Beta release ID must be canonical")
-    validate_status(root, registration)
+    # Only the Desktop smoke recovery opts out of the KMS proof checks; every
+    # other caller keeps the strict defaults.
+    validate_status(
+        root,
+        registration,
+        require_publication_proofs=require_publication_proofs,
+        require_active_release_sidecar=require_active_release_sidecar,
+    )
     identity = status_beta_identity(root, registration, state_label="current Factory")
     if identity is None:
         return {"redispatch": "false"}
@@ -3707,15 +3716,15 @@ def validate_registry_and_snapshots(
     root: Path,
     *,
     baseline_root: Path | None = None,
-    require_publication_proofs: bool = False,
-    require_active_release_sidecars: bool = False,
+    require_publication_proofs: bool = True,
+    require_active_release_sidecars: bool = True,
 ) -> None:
     """Validate external records in addition to the existing generic market gate.
 
-    Since 2026-11-22 the Factory does not require KMS publication proofs or
-    KMS release sidecars by default, so the Desktop smoke dispatch validates the
-    immutable records with these defaults. Passing ``True`` keeps the old strict
-    signed-record check available for a future gate; no workflow passes it now.
+    Source-gate validation sets ``require_publication_proofs``.  The only
+    exception is the protected publisher's short pre-KMS staging window: it
+    validates structure with the explicit opt-out, obtains the new sidecars,
+    and sends the generated branch through this strict gate before merge.
     """
 
     registrations = load_registry(root)
@@ -4042,6 +4051,16 @@ def main() -> None:
     redispatch_parser.add_argument("--plugin-id", required=True)
     redispatch_parser.add_argument("--beta-sha", required=True)
     redispatch_parser.add_argument("--beta-release-id", required=True)
+    redispatch_parser.add_argument(
+        "--allow-unsigned-publication-proofs",
+        action="store_true",
+        help="smoke recovery only: skip the KMS publication proof check on the Factory status",
+    )
+    redispatch_parser.add_argument(
+        "--allow-unsigned-active-release-sidecars",
+        action="store_true",
+        help="smoke recovery only: skip the KMS release sidecar check on the Factory status",
+    )
     source_reconcile_parser = commands.add_parser("prepare-reconcile-source")
     source_reconcile_parser.add_argument("--delivery-key", required=True)
     source_reconcile_parser.add_argument("--plugin-id", required=True)
@@ -4085,14 +4104,20 @@ def main() -> None:
     validate_parser.add_argument(
         "--allow-unsigned-publication-proofs",
         action="store_true",
-        help="deprecated no-op: validate no longer requires KMS publication proofs",
+        help="only for the protected publisher's pre-KMS staging window",
     )
     validate_parser.add_argument(
         "--allow-unsigned-active-release-sidecars",
         action="store_true",
-        help="deprecated no-op: validate no longer requires KMS release sidecars",
+        help="only for the protected publisher's pre-KMS staging window after build_market --clean",
     )
     args = parser.parse_args()
+    if (
+        args.command == "validate"
+        and args.allow_unsigned_active_release_sidecars
+        and not args.allow_unsigned_publication_proofs
+    ):
+        parser.error("--allow-unsigned-active-release-sidecars requires --allow-unsigned-publication-proofs")
     root = args.root.resolve()
     try:
         if args.command == "prepare":
@@ -4159,6 +4184,8 @@ def main() -> None:
                 args.plugin_id,
                 beta_sha=args.beta_sha,
                 beta_release_id=args.beta_release_id,
+                require_publication_proofs=not args.allow_unsigned_publication_proofs,
+                require_active_release_sidecar=not args.allow_unsigned_active_release_sidecars,
             )
         elif args.command == "prepare-reconcile-source":
             result = prepare_reconcile_source(
@@ -4193,6 +4220,8 @@ def main() -> None:
             validate_registry_and_snapshots(
                 root,
                 baseline_root=baseline_root,
+                require_publication_proofs=not args.allow_unsigned_publication_proofs,
+                require_active_release_sidecars=not args.allow_unsigned_active_release_sidecars,
             )
             result = {"valid": "true"}
         write_outputs(result, args.github_output)

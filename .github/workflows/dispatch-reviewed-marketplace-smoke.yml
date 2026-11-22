@@ -112,8 +112,9 @@ jobs:
             # Reuse only the active registered plugin status after the
             # complete Factory model validates its immutable provenance. The
             # record verification below checks every current document before
-            # this tuple is allowed to reach Desktop.
-            python scripts/external_source_factory.py validate
+            # this tuple is allowed to reach Desktop. KMS publication proofs and
+            # release sidecars are not required on this smoke path.
+            python scripts/external_source_factory.py validate --allow-unsigned-publication-proofs --allow-unsigned-active-release-sidecars
             registration="$(jq -cer --arg plugin_id "$INPUT_PLUGIN_ID" '
               .plugins | [ .[] | select(.pluginId == $plugin_id) ]
               | if length == 1 and .[0].status == "active" then .[0] else error("expected one active registered plugin") end
@@ -239,8 +240,9 @@ jobs:
             # Beta byte-for-byte, or it may be ahead/behind it.  The Beta PR
             # itself is valid in either case, but only the former gets a
             # Desktop smoke run.  Validate the complete Factory status model
-            # before treating its wait state as a dispatch decision.
-            python scripts/external_source_factory.py validate
+            # before treating its wait state as a dispatch decision. KMS
+            # publication proofs and release sidecars are not required here.
+            python scripts/external_source_factory.py validate --allow-unsigned-publication-proofs --allow-unsigned-active-release-sidecars
             waiting_for_beta=()
             smoke_promotions=()
             while IFS= read -r promotion; do
@@ -467,7 +469,7 @@ jobs:
             plugin_id="$(printf '%s' "$tuple" | jq -er .plugin_id)"
             beta_sha="$(printf '%s' "$tuple" | jq -er .beta_sha)"
             beta_release_id="$(printf '%s' "$tuple" | jq -er .beta_release_id)"
-            redispatch="$(python "$current_root/scripts/external_source_factory.py" --root "$current_root" --json needs-smoke-redispatch --plugin-id "$plugin_id" --beta-sha "$beta_sha" --beta-release-id "$beta_release_id")"
+            redispatch="$(python "$current_root/scripts/external_source_factory.py" --root "$current_root" --json needs-smoke-redispatch --allow-unsigned-publication-proofs --allow-unsigned-active-release-sidecars --plugin-id "$plugin_id" --beta-sha "$beta_sha" --beta-release-id "$beta_release_id")"
             [ "$(printf '%s' "$redispatch" | jq -er .redispatch)" = "true" ] || {
               echo "Manual Desktop smoke recovery no longer matches the current signed waiting_for_smoke Beta tuple for ${plugin_id}." >&2
               exit 1

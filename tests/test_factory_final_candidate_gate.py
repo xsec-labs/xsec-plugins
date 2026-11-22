@@ -269,6 +269,22 @@ class FactoryFinalCandidateGateWorkflowTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, dispatcher)
 
+    def test_smoke_dispatch_validates_records_without_kms_proofs(self) -> None:
+        dispatcher = (ROOT / ".github" / "workflows" / "dispatch-reviewed-marketplace-smoke.yml").read_text(encoding="utf-8")
+        relaxed_validate = (
+            "python scripts/external_source_factory.py validate "
+            "--allow-unsigned-publication-proofs --allow-unsigned-active-release-sidecars"
+        )
+        relaxed_redispatch = (
+            "--json needs-smoke-redispatch --allow-unsigned-publication-proofs "
+            "--allow-unsigned-active-release-sidecars --plugin-id"
+        )
+
+        self.assertEqual(dispatcher.count(relaxed_validate), 2)
+        self.assertIn(relaxed_redispatch, dispatcher)
+        self.assertIn("--verify-active-marketplace-records", dispatcher)
+        self.assertNotIn("--verify-active-marketplace-signatures", dispatcher)
+
     def test_dispatcher_recovers_only_the_current_signed_registered_plugin_beta(self) -> None:
         dispatcher = (ROOT / ".github" / "workflows" / "dispatch-reviewed-marketplace-smoke.yml").read_text(encoding="utf-8")
 
