@@ -1,0 +1,8 @@
+{
+  "name": "@xsec/system-terminal-plugin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:mcp": "node scripts/build-mcp.mjs"
+  }
+}
