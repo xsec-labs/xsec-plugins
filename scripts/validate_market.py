@@ -127,6 +127,21 @@ WORKSPACE_COMPOSER_PLUGIN_API_RANGE = "^1.4.0"
 BROWSER_SURFACE_PLUGIN_API_RANGE = "^1.4.0"
 TRAFFIC_PAYLOAD_PLUGIN_API_RANGE = "^1.5.0"
 TERMINAL_MUTATION_PLUGIN_API_RANGE = "^1.7.0"
+TERMINAL_AGENT_TOOLS_PLUGIN_API_RANGE = "^1.9.0"
+# RPC methods that Desktop's native terminal and MCP sidecar call through the
+# host. The webview never requests them, so the frontend reference rule skips
+# them for that plugin only.
+HOST_CONSUMED_FRONTEND_RPC_METHODS: dict[str, frozenset[str]] = {
+    "com.xsec.system-terminal": frozenset(
+        {
+            "xsec.terminal.attach",
+            "xsec.terminal.detach",
+            "xsec.terminal.list",
+            "xsec.terminal.profiles",
+            "xsec.terminal.reveal",
+        }
+    ),
+}
 BROWSER_SURFACE_METHOD_PREFIX = "xsec.browser.surface."
 BROWSER_PRESENTATION_METHOD = "xsec.browser.presentation.set"
 TRAFFIC_RENDER_HELPERS = frozenset({"u2", "h", "jsx", "jsxs", "createElement"})
@@ -2960,6 +2975,7 @@ def validate_official_frontend(manifest: dict[str, object], source: str, label: 
         BROWSER_SURFACE_PLUGIN_API_RANGE,
         TRAFFIC_PAYLOAD_PLUGIN_API_RANGE,
         TERMINAL_MUTATION_PLUGIN_API_RANGE,
+        TERMINAL_AGENT_TOOLS_PLUGIN_API_RANGE,
     }:
         fail(f"{label} must require plugin API 1.2 or a later supported version")
     frontend_api = desktop.get("frontendApi")
@@ -3009,7 +3025,13 @@ def validate_official_frontend(manifest: dict[str, object], source: str, label: 
         label,
         named_callbacks=frontend_source_has_reviewed_callback_schedulers(manifest, source),
     )
-    validate_frontend_rpc_literals(methods, tokens, label, requested)
+    host_consumed = HOST_CONSUMED_FRONTEND_RPC_METHODS.get(str(manifest.get("name", "")), frozenset())
+    validate_frontend_rpc_literals(
+        {name: value for name, value in methods.items() if name not in host_consumed},
+        tokens,
+        label,
+        requested,
+    )
 
 
 def validate_official_settings_contract(manifest: dict[str, object], label: str) -> None:
