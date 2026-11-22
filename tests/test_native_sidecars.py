@@ -158,6 +158,23 @@ class NativeSidecarFactoryTests(unittest.TestCase):
                 "a" * 40,
             )
 
+    def test_pre_native_beta_has_no_retained_native_contract(self) -> None:
+        # The system terminal's Beta 2.0.0 predates the native contract and has
+        # no sidecar provenance, so its first native build starts fresh.
+        recipe = native_sidecars.RECIPES["com.xsec.system-terminal"]
+        release_id = "sha256-" + "1" * 64
+        pre_native = {
+            "schemaVersion": 2,
+            "pluginId": recipe.plugin_id,
+            "releases": [{"releaseId": release_id, "version": "2.0.0", "engines": {}, "artifacts": []}],
+            "channels": {"beta": {"releaseId": release_id}, "stable": None},
+        }
+        self.assertEqual(build_market.retained_native_beta_contract(recipe, pre_native, "a" * 40), (recipe, None))
+        # A native Beta whose provenance is malformed is still refused.
+        malformed = {**pre_native, "releases": [{**pre_native["releases"][0], "nativeSidecarProvenance": {}}]}
+        with self.assertRaisesRegex(ValueError, "retained native Beta provenance is invalid"):
+            build_market.retained_native_beta_contract(recipe, malformed, "a" * 40)
+
     def test_first_publication_does_not_reuse_a_retained_native_beta(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-native-first-publication-") as directory:
             root = Path(directory)
