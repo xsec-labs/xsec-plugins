@@ -63,7 +63,7 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn("separately audited smoke recovery path", workflow)
         self.assertNotIn("XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN", workflow)
         self.assertIn("Dispatch the validated Beta or Stable revision to Desktop smoke", dispatcher)
-        self.assertIn("All registered Stable completions are bound to their KMS-authenticated Beta Desktop smoke callbacks", dispatcher)
+        self.assertIn("All registered Stable completions are bound to their Beta Desktop smoke callbacks", dispatcher)
 
     def test_current_publication_policy_and_legacy_status_verifier_are_documented(self) -> None:
         readme = README.read_text(encoding="utf-8")
@@ -83,7 +83,7 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn("OFFICIAL_STATUS_PROOFS_RELATIVE_PATH", publisher)
         self.assertIn("STATUS_PROOF_PATTERN", verifier)
         self.assertIn("status KMS proof", verifier)
-        self.assertIn("--verify-active-marketplace-signatures", dispatcher)
+        self.assertIn("--verify-active-marketplace-records", dispatcher)
 
     def test_merge_dispatcher_requires_signed_diff_source_gate_and_fresh_sources(self) -> None:
         dispatcher = POST_MERGE_DISPATCHER.read_text(encoding="utf-8")
@@ -91,7 +91,7 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         publisher = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
         for rule in (
             "verify_merged_stable_promotion.py",
-            "--verify-active-marketplace-signatures",
+            "--verify-active-marketplace-records",
             "successful immutable Factory source gate",
             "Require the merged generated PR and source gate",
             "Revalidate each registered source branch at the exact merge boundary",

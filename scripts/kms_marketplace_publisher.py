@@ -1026,6 +1026,11 @@ def main() -> None:
         help="cryptographically verify every active Marketplace document and return the shared immutable-document revision",
     )
     parser.add_argument(
+        "--verify-active-marketplace-records",
+        action="store_true",
+        help="check every active Marketplace document is present and parses, and return the Factory revision without KMS sidecars",
+    )
+    parser.add_argument(
         "--allow-unsigned-official-status-plugin-id",
         help="with --verify-active-marketplace-signatures, omit exactly one pending official status proof",
     )
@@ -1046,15 +1051,18 @@ def main() -> None:
         parser.error("--verify-retained-release-signature requires --retained-release-plugin-id")
     if args.verify_retained_release_signature and args.validate_only:
         parser.error("--verify-retained-release-signature cannot be combined with --validate-only")
-    if args.verify_active_marketplace_signatures and (
+    if args.verify_active_marketplace_signatures and args.verify_active_marketplace_records:
+        parser.error("--verify-active-marketplace-signatures and --verify-active-marketplace-records are mutually exclusive")
+    verify_active = args.verify_active_marketplace_signatures or args.verify_active_marketplace_records
+    if verify_active and (
         args.validate_only
         or args.retained_release_plugin_id is not None
         or args.official_status_plugin_id is not None
         or args.first_party_adoption_plugin_id is not None
     ):
-        parser.error("--verify-active-marketplace-signatures cannot be combined with retained-release, status-only, or validate-only options")
-    if args.allow_unsigned_official_status_plugin_id is not None and not args.verify_active_marketplace_signatures:
-        parser.error("--allow-unsigned-official-status-plugin-id requires --verify-active-marketplace-signatures")
+        parser.error("active Marketplace verification cannot be combined with retained-release, status-only, or validate-only options")
+    if args.allow_unsigned_official_status_plugin_id is not None and not verify_active:
+        parser.error("--allow-unsigned-official-status-plugin-id requires an active Marketplace verification option")
     if args.exclude_official_status and (
         args.retained_release_plugin_id is not None
         or args.official_status_plugin_id is not None
@@ -1073,7 +1081,7 @@ def main() -> None:
         parser.error("the Marketplace single-document selectors are mutually exclusive")
     root = args.root.resolve()
     try:
-        if args.verify_active_marketplace_signatures:
+        if verify_active:
             documents = documents_for_active_signature_verification(
                 root,
                 allow_unsigned_official_status_plugin_id=args.allow_unsigned_official_status_plugin_id,
@@ -1095,6 +1103,32 @@ def main() -> None:
                 fail(f"KMS sidecar is unavailable: {sidecar}")
             verify_historical_sidecar_signature(sidecar.read_bytes(), document)
             print("cryptographically verified 1 retained KMS marketplace sidecar")
+            return
+        if args.verify_active_marketplace_records:
+            # Since 2026-11-22 the Factory gates do not consult KMS sidecars.
+            # This mode proves only that every active immutable document is
+            # present and parses; the revision is the protected checkout's.
+            if not documents:
+                fail("active Marketplace record verification has no documents")
+            for document in documents:
+                try:
+                    json.loads(document.path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    fail(f"active Marketplace record is unreadable: {document.subject}")
+            print(
+                stable_json(
+                    {
+                        "documents": len(documents),
+                        "source_revision": source_revision_from_environment(os.environ),
+                        **(
+                            {"unsigned_official_status_plugin_id": args.allow_unsigned_official_status_plugin_id}
+                            if args.allow_unsigned_official_status_plugin_id is not None
+                            else {}
+                        ),
+                    }
+                ).decode("utf-8"),
+                end="",
+            )
             return
         if args.verify_active_marketplace_signatures:
             if not documents:

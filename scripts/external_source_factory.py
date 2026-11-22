@@ -3277,6 +3277,8 @@ def needs_smoke_redispatch(
     *,
     beta_sha: str,
     beta_release_id: str,
+    require_publication_proofs: bool = True,
+    require_active_release_sidecar: bool = True,
 ) -> dict[str, str]:
     """Report whether an already-signed Beta needs its lost smoke dispatch replayed.
 
@@ -3291,7 +3293,14 @@ def needs_smoke_redispatch(
     expected_beta_sha = safe_sha(beta_sha, "smoke redispatch Beta source SHA")
     if not isinstance(beta_release_id, str) or not RELEASE_ID_PATTERN.fullmatch(beta_release_id):
         fail("smoke redispatch Beta release ID must be canonical")
-    validate_status(root, registration)
+    # Only the Desktop smoke recovery opts out of the KMS proof checks; every
+    # other caller keeps the strict defaults.
+    validate_status(
+        root,
+        registration,
+        require_publication_proofs=require_publication_proofs,
+        require_active_release_sidecar=require_active_release_sidecar,
+    )
     identity = status_beta_identity(root, registration, state_label="current Factory")
     if identity is None:
         return {"redispatch": "false"}
@@ -4042,6 +4051,16 @@ def main() -> None:
     redispatch_parser.add_argument("--plugin-id", required=True)
     redispatch_parser.add_argument("--beta-sha", required=True)
     redispatch_parser.add_argument("--beta-release-id", required=True)
+    redispatch_parser.add_argument(
+        "--allow-unsigned-publication-proofs",
+        action="store_true",
+        help="smoke recovery only: skip the KMS publication proof check on the Factory status",
+    )
+    redispatch_parser.add_argument(
+        "--allow-unsigned-active-release-sidecars",
+        action="store_true",
+        help="smoke recovery only: skip the KMS release sidecar check on the Factory status",
+    )
     source_reconcile_parser = commands.add_parser("prepare-reconcile-source")
     source_reconcile_parser.add_argument("--delivery-key", required=True)
     source_reconcile_parser.add_argument("--plugin-id", required=True)
@@ -4165,6 +4184,8 @@ def main() -> None:
                 args.plugin_id,
                 beta_sha=args.beta_sha,
                 beta_release_id=args.beta_release_id,
+                require_publication_proofs=not args.allow_unsigned_publication_proofs,
+                require_active_release_sidecar=not args.allow_unsigned_active_release_sidecars,
             )
         elif args.command == "prepare-reconcile-source":
             result = prepare_reconcile_source(
