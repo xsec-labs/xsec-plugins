@@ -214,12 +214,27 @@ BROWSER_RECIPE = NativeSidecarRecipe(
     packed_runtime_kind="browser-node",
 )
 
+SYSTEM_TERMINAL_RECIPE = NativeSidecarRecipe(
+    plugin_id="com.xsec.system-terminal",
+    skill_id="system-terminal",
+    source_repository="xsec-labs/xSecDesktop",
+    archive_path=PurePosixPath("bin/system-terminal-mcp"),
+    servers=(NativeStdioServer("system-terminal"),),
+    targets=(
+        NativeTarget("aarch64-apple-darwin", "macos", "aarch64"),
+        NativeTarget("x86_64-apple-darwin", "macos", "x86_64"),
+        NativeTarget("x86_64-unknown-linux-gnu", "linux", "x86_64"),
+        NativeTarget("x86_64-pc-windows-msvc", "windows", "x86_64"),
+    ),
+)
+
 RECIPES = {
     ATTACK_PATH_RECIPE.plugin_id: ATTACK_PATH_RECIPE,
     ASSET_DISCOVERY_RECIPE.plugin_id: ASSET_DISCOVERY_RECIPE,
     BINARY_ANALYSIS_RECIPE.plugin_id: BINARY_ANALYSIS_RECIPE,
     JWT_ANALYSIS_RECIPE.plugin_id: JWT_ANALYSIS_RECIPE,
     BROWSER_RECIPE.plugin_id: BROWSER_RECIPE,
+    SYSTEM_TERMINAL_RECIPE.plugin_id: SYSTEM_TERMINAL_RECIPE,
 }
 
 
