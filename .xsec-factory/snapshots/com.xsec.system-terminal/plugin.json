@@ -1,14 +1,16 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "com.xsec.system-terminal",
-  "version": "2.1.0",
-  "description": "XSEC workspace system terminal",
-  "author": { "name": "XSEC" },
+  "version": "4.2.0",
+  "description": "XSEC session-scoped system terminal MCP",
+  "author": {
+    "name": "XSEC"
+  },
   "license": "MIT",
   "extensions": {
     "com.xsec.desktop": {
       "schemaVersion": 3,
-      "displayName": "系统终端",
+      "displayName": "系统终端 MCP",
       "publisher": "XSEC",
       "icon": "terminal",
       "engines": {
@@ -19,11 +21,15 @@
         "frontend": "./com.xsec.desktop/frontend/index.js",
         "native": "builtin:com.xsec.system-terminal"
       },
-      "activationEvents": ["onWorkspaceTool:system-terminal", "onSettingsPage:system-terminal", "onAgentTool:terminal_open"],
+      "activationEvents": [
+        "onWorkspaceTool:system-terminal",
+        "onSettingsPage:system-terminal",
+        "onAgentTool:terminal_open"
+      ],
       "contributes": {
         "workspaceTools": {
           "system-terminal": {
-            "title": "系统终端",
+            "title": "系统终端 MCP",
             "icon": "terminal",
             "scope": "session",
             "launchable": true,
@@ -33,7 +39,9 @@
             "preferredSideWidth": 520,
             "preferredBottomHeight": 300,
             "defaultDock": "bottom",
-            "surfaces": ["interactive-dock"]
+            "surfaces": [
+              "interactive-dock"
+            ]
           }
         },
         "settingsPages": {
@@ -45,88 +53,88 @@
             "order": 120
           }
         },
-    "agentTools": {
-      "terminal-profiles": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_profiles",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      },
-      "terminal-open": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_open",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      },
-      "terminal-list": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_list",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      },
-      "terminal-read": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_read",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      },
-      "terminal-write": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_write",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      },
-      "terminal-resize": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_resize",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      },
-      "terminal-reveal": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_reveal",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      },
-      "terminal-close": {
-        "mcpServer": "system-terminal",
-        "mcpTool": "terminal_close",
-        "workspaceToolId": "system-terminal",
-        "permission": "terminal.shell:session.agent",
-        "roles": [
-          "parent",
-          "sub"
-        ]
-      }
-    }
+        "agentTools": {
+          "terminal-profiles": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_profiles",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "terminal-open": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_open",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "terminal-list": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_list",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "terminal-read": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_read",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "terminal-write": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_write",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "terminal-resize": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_resize",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "terminal-reveal": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_reveal",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "terminal-close": {
+            "mcpServer": "system-terminal",
+            "mcpTool": "terminal_close",
+            "workspaceToolId": "system-terminal",
+            "permission": "terminal.shell:session.agent",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          }
+        }
       },
       "permissions": {
         "workspace.session.read": {},
@@ -137,20 +145,60 @@
         "pluginData.read": {},
         "pluginData.write": {}
       },
-      "frontendApi": { "version": 2, "module": "single-esm", "methods": {
-        "xsec.terminal.open": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.read": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.write": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.resize": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.close": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.settings.get": { "capability": "pluginData.read", "binding": "plugin" },
-        "xsec.terminal.settings.set": { "capability": "pluginData.write", "binding": "plugin" },
-        "xsec.terminal.profiles": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.list": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.reveal": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.attach": { "capability": "terminal.shell", "binding": "session" },
-        "xsec.terminal.detach": { "capability": "terminal.shell", "binding": "session" }
-      } }
+      "frontendApi": {
+        "version": 2,
+        "module": "single-esm",
+        "methods": {
+          "xsec.terminal.profiles": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.open": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.list": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.read": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.write": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.resize": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.attach": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.detach": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.reveal": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.close": {
+            "capability": "terminal.shell",
+            "binding": "session"
+          },
+          "xsec.terminal.settings.get": {
+            "capability": "pluginData.read",
+            "binding": "plugin"
+          },
+          "xsec.terminal.settings.set": {
+            "capability": "pluginData.write",
+            "binding": "plugin"
+          }
+        }
+      }
     }
   }
 }
