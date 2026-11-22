@@ -31,6 +31,21 @@
         "url": "artifacts/com.xsec.system-terminal-2.1.0-sha256-ddbc605c01b688ec-macos-aarch64.xsec-plugin"
       },
       "publisher": "tzf1003"
+    },
+    {
+      "channel": "beta",
+      "releaseId": "sha256-0d70775b4c03a80a6d34c3da0036e50ba4b7febc8a470b28296ad7d2481cb71c",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-system-terminal",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "4d70dd353959ed062362d749e7a88a74f068e9ed"
+      },
+      "artifact": {
+        "sha256": "7a4fbc4bf2bc9b6bfa660ab0b6b48e2ccc45c21562215a9ad14bdf2db1aab8ea",
+        "url": "artifacts/com.xsec.system-terminal-4.2.0-sha256-7a4fbc4bf2bc9b6b-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "tzf1003"
     }
   ]
 }

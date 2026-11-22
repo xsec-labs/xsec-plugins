@@ -56,7 +56,6 @@
           "repository": "xsec-labs/xSecDesktop",
           "revision": "ffe6be53330b69b5e1ea9eee8f21b66d3ae05bf1"
         },
-        "targetMatrixVersion": 2,
         "targets": [
           {
             "rustTarget": "aarch64-apple-darwin",
@@ -82,13 +81,81 @@
             "arch": "x86_64",
             "sha256": "29cd84b1831aee11d017f8ad909edbb28bf76b3ae66652d274f2877386f2c632"
           }
+        ],
+        "targetMatrixVersion": 2
+      }
+    },
+    {
+      "releaseId": "sha256-0d70775b4c03a80a6d34c3da0036e50ba4b7febc8a470b28296ad7d2481cb71c",
+      "version": "4.2.0",
+      "engines": {
+        "xsec": ">=0.1.0",
+        "pluginApi": "^1.9.0"
+      },
+      "artifacts": [
+        {
+          "os": "macos",
+          "arch": "aarch64",
+          "url": "artifacts/com.xsec.system-terminal-4.2.0-sha256-7a4fbc4bf2bc9b6b-macos-aarch64.xsec-plugin",
+          "sha256": "7a4fbc4bf2bc9b6bfa660ab0b6b48e2ccc45c21562215a9ad14bdf2db1aab8ea"
+        },
+        {
+          "os": "macos",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.system-terminal-4.2.0-sha256-d1ad5b48a9493d48-macos-x86_64.xsec-plugin",
+          "sha256": "d1ad5b48a9493d485a56c6acc141476ef948e38cb01c442756cc54196f828ee8"
+        },
+        {
+          "os": "linux",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.system-terminal-4.2.0-sha256-86b2e22781c19624-linux-x86_64.xsec-plugin",
+          "sha256": "86b2e22781c19624c125bd82828c1214703969306844d5d0830ad755b2b1dfe3"
+        },
+        {
+          "os": "windows",
+          "arch": "x86_64",
+          "url": "artifacts/com.xsec.system-terminal-4.2.0-sha256-7e5b435a6ba6284f-windows-x86_64.xsec-plugin",
+          "sha256": "7e5b435a6ba6284f36454ce087b7dd15bbecbeb6fcf0d318c985e424f51dbfba"
+        }
+      ],
+      "nativeSidecarProvenance": {
+        "source": {
+          "repository": "xsec-labs/xSecDesktop",
+          "revision": "994b1864e42c54b0030c1c7e80b366d18adf26b5"
+        },
+        "targetMatrixVersion": 2,
+        "targets": [
+          {
+            "rustTarget": "aarch64-apple-darwin",
+            "os": "macos",
+            "arch": "aarch64",
+            "sha256": "18d2646840180d19b7c96a25aac73d42f6b1fdc8146be9a5e1b02449b381a906"
+          },
+          {
+            "rustTarget": "x86_64-apple-darwin",
+            "os": "macos",
+            "arch": "x86_64",
+            "sha256": "caa5db628dbc708892461775c9df521db9b4bbca5da43d0edc28d0f2b23e8584"
+          },
+          {
+            "rustTarget": "x86_64-unknown-linux-gnu",
+            "os": "linux",
+            "arch": "x86_64",
+            "sha256": "5d36124315d8c8702eccbeb5acb8a8f29f41d2465ec98d4abe680bad9513802c"
+          },
+          {
+            "rustTarget": "x86_64-pc-windows-msvc",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "949a161124eaa3145951e4559d86f15d89865fecf9f38b278881219a4514a18f"
+          }
         ]
       }
     }
   ],
   "channels": {
     "beta": {
-      "releaseId": "sha256-1a6ce53d8f0dfbd30c2c7d3ee687955179ae8f774604c10bceec856bf1f151a4"
+      "releaseId": "sha256-0d70775b4c03a80a6d34c3da0036e50ba4b7febc8a470b28296ad7d2481cb71c"
     },
     "stable": null
   }

@@ -1,16 +1,16 @@
 {
   "name": "com.xsec.system-terminal",
-  "version": "2.1.0",
-  "description": "XSEC workspace system terminal",
+  "version": "4.2.0",
+  "description": "XSEC session-scoped system terminal MCP",
   "author": {
     "name": "XSEC"
   },
   "license": "MIT",
   "repository": "https://github.com/xsec-labs/xsec-plugins",
   "interface": {
-    "displayName": "系统终端",
-    "shortDescription": "XSEC workspace system terminal",
-    "longDescription": "XSEC 官方插件：系统终端。可在 XSEC 插件市场安装、禁用和更新。",
+    "displayName": "系统终端 MCP",
+    "shortDescription": "会话共享的系统终端和 MCP 工具",
+    "longDescription": "XSEC 官方插件：会话共享的系统终端 MCP，Agent 与用户可共同操作同一 PTY。",
     "developerName": "XSEC",
     "category": "Security",
     "capabilities": [
@@ -18,7 +18,7 @@
     ],
     "websiteURL": "https://github.com/xsec-labs/xsec-plugins",
     "defaultPrompt": [
-      "打开 系统终端"
+      "打开 系统终端 MCP"
     ],
     "brandColor": "#4F7CFF"
   }
