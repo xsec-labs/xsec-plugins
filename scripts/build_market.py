@@ -891,6 +891,11 @@ def retained_native_beta_contract(
     if not isinstance(beta_id, str) or not isinstance(releases, list):
         raise ValueError(f"release metadata for {recipe.plugin_id} has invalid Beta history")
     selected = next((item for item in releases if isinstance(item, dict) and item.get("releaseId") == beta_id), None)
+    if isinstance(selected, dict) and "nativeSidecarProvenance" not in selected:
+        # A Beta published before the native contract has no sidecar provenance
+        # to reproduce (the system terminal's 2.0.0 is one). The first native
+        # build replaces it, and the release stays in the append-only history.
+        return recipe, None
     provenance = selected.get("nativeSidecarProvenance") if isinstance(selected, dict) else None
     try:
         normalized = validate_provenance(recipe, provenance)
