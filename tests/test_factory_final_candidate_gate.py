@@ -261,7 +261,7 @@ class FactoryFinalCandidateGateWorkflowTests(unittest.TestCase):
             "manual_recovery: ${{ steps.classify.outputs.manual_recovery }}",
             "recovery_tuples: ${{ steps.classify.outputs.recovery_tuples }}",
             "Revalidate current Factory recovery tuple immediately before dispatch",
-            "--verify-active-marketplace-signatures",
+            "--verify-active-marketplace-records",
             "--json needs-smoke-redispatch",
             "--beta-release-id \"$beta_release_id\"",
             "MARKETPLACE_REVISION: ${{ needs.verify-reviewed-publication.outputs.marketplace_revision }}",
@@ -323,7 +323,7 @@ class FactoryFinalCandidateGateWorkflowTests(unittest.TestCase):
             '.release.stableReleaseId == $release_id',
             '.publication.smokeRunUrl | type == "string"',
             '.publication.marketplaceRevision | type == "string"',
-            'All registered Stable completions are bound to their KMS-authenticated Beta Desktop smoke callbacks',
+            'All registered Stable completions are bound to their Beta Desktop smoke callbacks',
         ):
             with self.subTest(required_status_binding=required_status_binding):
                 self.assertIn(required_status_binding, dispatcher)

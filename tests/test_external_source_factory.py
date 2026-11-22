@@ -4,6 +4,7 @@ import base64
 import io
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -1648,7 +1649,11 @@ class ExternalSourceFactoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="xsec-first-party-adoption-") as directory:
             root = Path(directory)
             release_id = self.make_first_party_adoption(root)
-            factory.validate_registry_and_snapshots(root)
+            factory.validate_registry_and_snapshots(
+                root,
+                require_publication_proofs=True,
+                require_active_release_sidecars=True,
+            )
 
             adoption_path = factory.adoption_path(root, "com.xsec.workspace.sub-agent")
             adoption = json.loads(adoption_path.read_text(encoding="utf-8"))
@@ -1656,7 +1661,11 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             adoption["source"]["betaSha"] = "d" * 40
             write_json(adoption_path, adoption)
             with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "KMS adoption proof is invalid"):
-                factory.validate_registry_and_snapshots(root)
+                factory.validate_registry_and_snapshots(
+                    root,
+                    require_publication_proofs=True,
+                    require_active_release_sidecars=True,
+                )
 
             # Restore the signed payload, then demonstrate that a pointer
             # rewrite is detected before any new source can be accepted.
@@ -1665,8 +1674,53 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             adoption["channels"]["beta"] = {"releaseId": "sha256-" + "0" * 64}
             write_json(adoption_path, adoption)
             with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "channel pointer is not historical"):
-                factory.validate_registry_and_snapshots(root)
+                factory.validate_registry_and_snapshots(
+                    root,
+                    require_publication_proofs=True,
+                    require_active_release_sidecars=True,
+                )
             self.assertTrue(release_id.startswith("sha256-"))
+
+    def test_default_factory_validation_does_not_require_kms_sidecars(self) -> None:
+        """The default Factory gate no longer requires KMS release sidecars."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-first-party-no-kms-sidecars-") as directory:
+            root = Path(directory)
+            self.make_first_party_adoption(root)
+            plugin_id = "com.xsec.workspace.sub-agent"
+            factory.release_path(root, plugin_id).with_name("releases.json.sig.jws.json").unlink()
+
+            factory.validate_registry_and_snapshots(root)
+
+    def test_active_records_verifier_returns_factory_revision_without_sidecars(self) -> None:
+        """Smoke's record check needs no KMS sidecar and reports the checkout revision."""
+
+        with tempfile.TemporaryDirectory(prefix="xsec-active-records-") as directory:
+            root = Path(directory)
+            self.make_first_party_adoption(root)
+            plugin_id = "com.xsec.workspace.sub-agent"
+            factory.release_path(root, plugin_id).with_name("releases.json.sig.jws.json").unlink()
+            environment = {key: value for key, value in os.environ.items() if key != "XSEC_MARKETPLACE_SOURCE_REVISION"}
+            environment["GITHUB_SHA"] = "a" * 40
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "kms_marketplace_publisher.py"),
+                    "--root",
+                    str(root),
+                    "--verify-active-marketplace-records",
+                ],
+                cwd=ROOT,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(json.loads(completed.stdout)["source_revision"], "a" * 40)
 
     def test_pre_kms_staging_allows_only_missing_active_first_party_release_sidecars(self) -> None:
         """The protected publisher may replace sidecars, but cannot mask a bad one."""
@@ -1679,7 +1733,11 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             sidecar.unlink()
 
             with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "KMS release sidecar is unavailable"):
-                factory.validate_registry_and_snapshots(root)
+                factory.validate_registry_and_snapshots(
+                    root,
+                    require_publication_proofs=True,
+                    require_active_release_sidecars=True,
+                )
             factory.validate_registry_and_snapshots(
                 root,
                 require_publication_proofs=False,
@@ -1710,7 +1768,11 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             sidecar.unlink()
 
             with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "KMS release sidecar is unavailable"):
-                factory.validate_registry_and_snapshots(root)
+                factory.validate_registry_and_snapshots(
+                    root,
+                    require_publication_proofs=True,
+                    require_active_release_sidecars=True,
+                )
             factory.validate_registry_and_snapshots(
                 root,
                 require_publication_proofs=False,

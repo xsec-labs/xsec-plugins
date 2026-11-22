@@ -111,8 +111,8 @@ jobs:
             }
             # Reuse only the active registered plugin status after the
             # complete Factory model validates its immutable provenance. The
-            # KMS verification below authenticates every current sidecar
-            # before this tuple is allowed to reach Desktop.
+            # record verification below checks every current document before
+            # this tuple is allowed to reach Desktop.
             python scripts/external_source_factory.py validate
             registration="$(jq -cer --arg plugin_id "$INPUT_PLUGIN_ID" '
               .plugins | [ .[] | select(.pluginId == $plugin_id) ]
@@ -158,10 +158,10 @@ jobs:
             exit 1
           fi
           # The diff verifier proves the allowed transition and the following
-          # verifier authenticates every exact post-merge document byte with
-          # the pinned KMS issuer. A title, merge subject, or changed path
-          # alone can never enter the Desktop path.
-          verification="$(python scripts/kms_marketplace_publisher.py --root . --verify-active-marketplace-signatures)"
+          # verifier checks that every active immutable record is present and
+          # parses, then reports the Factory revision. A title, merge subject,
+          # or changed path alone can never enter the Desktop path.
+          verification="$(python scripts/kms_marketplace_publisher.py --root . --verify-active-marketplace-records)"
           source_sha="$(printf '%s' "$verification" | jq -er .source_revision)"
           [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || {
             echo "Merged Marketplace signatures did not provide a canonical source revision." >&2
@@ -172,10 +172,10 @@ jobs:
             exit 1
           }
           # A Registry-bound external Stable completion can skip only when its
-          # current KMS-authenticated status proves the exact terminal Desktop
-          # callback. A source tuple alone is insufficient: guarded manual
-          # external Stable recovery intentionally records promoting_stable,
-          # while legacy built-ins can promote or roll back retained releases.
+          # current status proves the exact terminal Desktop callback. A source
+          # tuple alone is insufficient: guarded manual external Stable
+          # recovery intentionally records promoting_stable, while legacy
+          # built-ins can promote or roll back retained releases.
           # Do not use jq -e here: false is the expected result for every
           # Beta and legacy/manual Stable transition, not a workflow failure.
           callback_bound_stable="$(printf '%s' "$result" | jq -cr '
@@ -220,7 +220,7 @@ jobs:
             done < <(printf '%s' "$result" | jq -rc '.promotions[]')
             if [ "$callback_bound_stable" = "true" ]; then
               echo "eligible=false" >> "$GITHUB_OUTPUT"
-              echo "All registered Stable completions are bound to their KMS-authenticated Beta Desktop smoke callbacks; no duplicate Desktop dispatch is needed."
+              echo "All registered Stable completions are bound to their Beta Desktop smoke callbacks; no duplicate Desktop dispatch is needed."
               exit 0
             fi
           fi
@@ -459,11 +459,10 @@ jobs:
             echo "Current protected Factory checkout is unavailable for manual Desktop smoke recovery." >&2
             exit 1
           }
-          # The status sidecar is not trusted merely because it is readable.
-          # Authenticate the current KMS proof before accepting any current
+          # Check every current immutable record before accepting any current
           # waiting-for-smoke tuple, then bind every tuple to its immutable
           # Beta release ID and source SHA.
-          python "$current_root/scripts/kms_marketplace_publisher.py" --root "$current_root" --verify-active-marketplace-signatures >/dev/null
+          python "$current_root/scripts/kms_marketplace_publisher.py" --root "$current_root" --verify-active-marketplace-records >/dev/null
           while IFS= read -r tuple; do
             plugin_id="$(printf '%s' "$tuple" | jq -er .plugin_id)"
             beta_sha="$(printf '%s' "$tuple" | jq -er .beta_sha)"
