@@ -94,7 +94,7 @@
       },
       "category": "Security",
       "displayNameEn": "System terminal",
-      "status": "active"
+      "status": "disabled"
     },
     {
       "pluginId": "com.xsec.workspace.approvals",
