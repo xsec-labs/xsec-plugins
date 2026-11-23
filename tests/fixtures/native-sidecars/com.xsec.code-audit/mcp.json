@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "code-audit": {
+      "type": "stdio",
+      "command": "./bin/code-audit-mcp",
+      "cwd": "${PLUGIN_DATA}"
+    }
+  }
+}
