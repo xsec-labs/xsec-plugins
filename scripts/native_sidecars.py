@@ -228,6 +228,20 @@ SYSTEM_TERMINAL_RECIPE = NativeSidecarRecipe(
     ),
 )
 
+CODE_AUDIT_RECIPE = NativeSidecarRecipe(
+    plugin_id="com.xsec.code-audit",
+    skill_id="xsec-code-audit",
+    source_repository="xsec-labs/xSecDesktop",
+    archive_path=PurePosixPath("bin/code-audit-mcp"),
+    servers=(NativeStdioServer("code-audit"),),
+    targets=(
+        NativeTarget("aarch64-apple-darwin", "macos", "aarch64"),
+        NativeTarget("x86_64-apple-darwin", "macos", "x86_64"),
+        NativeTarget("x86_64-unknown-linux-gnu", "linux", "x86_64"),
+        NativeTarget("x86_64-pc-windows-msvc", "windows", "x86_64"),
+    ),
+)
+
 RECIPES = {
     ATTACK_PATH_RECIPE.plugin_id: ATTACK_PATH_RECIPE,
     ASSET_DISCOVERY_RECIPE.plugin_id: ASSET_DISCOVERY_RECIPE,
@@ -235,6 +249,7 @@ RECIPES = {
     JWT_ANALYSIS_RECIPE.plugin_id: JWT_ANALYSIS_RECIPE,
     BROWSER_RECIPE.plugin_id: BROWSER_RECIPE,
     SYSTEM_TERMINAL_RECIPE.plugin_id: SYSTEM_TERMINAL_RECIPE,
+    CODE_AUDIT_RECIPE.plugin_id: CODE_AUDIT_RECIPE,
 }
 
 

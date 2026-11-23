@@ -2492,10 +2492,11 @@ export function renderPlaceholder() {}
         self.assertIn("./cmd/attack-path-mcp", sidecar_job)
         self.assertIn("./cmd/asset-discovery-mcp", sidecar_job)
         self.assertIn("./cmd/system-terminal-mcp", sidecar_job)
+        self.assertIn("./cmd/code-audit-mcp", sidecar_job)
         self.assertIn("xsec-native-sidecars-${{ matrix.rust_target }}", sidecar_job)
         self.assertIn(
             'for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser '
-            'com.xsec.binary-analysis com.xsec.jwt-analysis com.xsec.system-terminal; do',
+            'com.xsec.binary-analysis com.xsec.jwt-analysis com.xsec.system-terminal com.xsec.code-audit; do',
             steps,
         )
         # A native plugin without a discovery entry has not been published
@@ -2653,7 +2654,7 @@ export function renderPlaceholder() {}
         signing_job = workflow.split("  sign-and-publish:\n", 1)[1]
         # The release step requires these sidecars on every target,
         # including Windows, under their extensionless input names.
-        for binary in ("attack-path-mcp", "asset-discovery-mcp", "browser-mcp", "binary-analysis-mcp", "system-terminal-mcp"):
+        for binary in ("attack-path-mcp", "asset-discovery-mcp", "browser-mcp", "binary-analysis-mcp", "system-terminal-mcp", "code-audit-mcp"):
             self.assertIn(f'binary_name="{binary}"', signing_job)
             self.assertIn(f'"$output_dir/{binary}"', sidecar_job)
             self.assertIn(f"(Join-Path $outputDirectory '{binary}')", sidecar_job)

@@ -1,0 +1,316 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "com.xsec.code-audit",
+  "version": "0.1.0",
+  "description": "Source-code security audit workspace and Agent tools",
+  "author": {
+    "name": "XSEC"
+  },
+  "license": "MIT",
+  "extensions": {
+    "com.xsec.desktop": {
+      "schemaVersion": 3,
+      "displayName": "代码审计",
+      "publisher": "XSEC",
+      "icon": "code",
+      "engines": {
+        "xsec": ">=0.1.0",
+        "pluginApi": "^1.8.0"
+      },
+      "entrypoints": {
+        "frontend": "./com.xsec.desktop/frontend/index.js"
+      },
+      "activationEvents": [
+        "onWorkspaceTool:code-audit",
+        "onSettingsPage:settings",
+        "onAgentTool:run-start"
+      ],
+      "permissions": {
+        "workspace.project.read": {
+          "reason": "读取当前项目，按项目归集审计运行"
+        },
+        "workspace.session.read": {
+          "reason": "读取当前会话，把审计面板与会话关联"
+        },
+        "workspace.composer.write": {
+          "reason": "把发现作为引用加入对话输入框"
+        },
+        "workspace.tool.open": {
+          "reason": "在对话中打开代码审计面板"
+        },
+        "workspace.panel.maximize": {
+          "reason": "发现详情的专注模式"
+        },
+        "filesystem.workspace.read": {
+          "reason": "读取被审计目录里的源码文本（只读，不执行）"
+        },
+        "pluginData.read": {
+          "reason": "读取代码审计设置"
+        },
+        "pluginData.write": {
+          "reason": "保存审计运行、发现、覆盖台账和设置"
+        },
+        "mcp.servers.register": {
+          "reason": "注册代码审计 MCP 服务"
+        },
+        "native.execute": {
+          "reason": "运行 Factory 构建的代码审计 Sidecar"
+        }
+      },
+      "frontendApi": {
+        "version": 2,
+        "module": "single-esm",
+        "methods": {
+          "xsec.code-audit.runs.list": {
+            "capability": "workspace.project.read",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_runs_list"
+          },
+          "xsec.code-audit.run.get": {
+            "capability": "workspace.project.read",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_run_get"
+          },
+          "xsec.code-audit.run.delete": {
+            "capability": "pluginData.write",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_run_delete"
+          },
+          "xsec.code-audit.coverage.get": {
+            "capability": "workspace.project.read",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_coverage_get"
+          },
+          "xsec.code-audit.findings.list": {
+            "capability": "workspace.project.read",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_findings_list"
+          },
+          "xsec.code-audit.finding.get": {
+            "capability": "workspace.project.read",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_finding_get"
+          },
+          "xsec.code-audit.finding.state.set": {
+            "capability": "pluginData.write",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_finding_state_set"
+          },
+          "xsec.code-audit.validate": {
+            "capability": "workspace.project.read",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_validate"
+          },
+          "xsec.code-audit.export": {
+            "capability": "pluginData.write",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_export"
+          },
+          "xsec.workspace.tool.open": {
+            "capability": "workspace.tool.open",
+            "binding": "context"
+          },
+          "xsec.workspace.composer.path.add": {
+            "capability": "workspace.composer.write",
+            "binding": "context"
+          },
+          "xsec.plugin.config.get": {
+            "capability": "pluginData.read",
+            "binding": "plugin"
+          },
+          "xsec.plugin.config.set": {
+            "capability": "pluginData.write",
+            "binding": "plugin"
+          },
+          "xsec.code-audit.report.read": {
+            "capability": "workspace.project.read",
+            "binding": "context",
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_report_read"
+          },
+          "xsec.workspace.composer.text.add": {
+            "capability": "workspace.composer.write",
+            "binding": "context"
+          },
+          "xsec.workspace.directory.pick": {
+            "capability": "filesystem.workspace.read",
+            "binding": "context"
+          },
+          "xsec.workspace.panel.maximize": {
+            "capability": "workspace.panel.maximize",
+            "binding": "context"
+          }
+        }
+      },
+      "contributes": {
+        "workspaceTools": {
+          "code-audit": {
+            "title": "代码审计",
+            "icon": "code",
+            "scope": "project",
+            "launchable": true,
+            "policy": "singleton",
+            "surface": "standard",
+            "retain": "active",
+            "preferredSideWidth": 620,
+            "preferredBottomHeight": 420,
+            "surfaces": [
+              "interactive-dock",
+              "batch-observe"
+            ]
+          }
+        },
+        "settingsPages": {
+          "settings": {
+            "title": "代码审计",
+            "group": "plugins",
+            "page": "settings",
+            "icon": "code",
+            "order": 130
+          }
+        },
+        "agentTools": {
+          "run-start": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_run_start",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "run-update": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_run_update",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "architecture-put": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_architecture_put",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "agent-note": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_agent_note",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "ledger-put": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_ledger_put",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "findings-put": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_findings_put",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "finding-state-set": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_finding_state_set",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "report-build": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_report_build",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "export": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_export",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "run-delete": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_run_delete",
+            "workspaceToolId": "code-audit",
+            "permission": "pluginData.write"
+          },
+          "runs-list": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_runs_list",
+            "workspaceToolId": "code-audit",
+            "permission": "workspace.project.read",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "run-get": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_run_get",
+            "workspaceToolId": "code-audit",
+            "permission": "workspace.project.read",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "coverage-get": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_coverage_get",
+            "workspaceToolId": "code-audit",
+            "permission": "workspace.project.read",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "findings-list": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_findings_list",
+            "workspaceToolId": "code-audit",
+            "permission": "workspace.project.read",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "finding-get": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_finding_get",
+            "workspaceToolId": "code-audit",
+            "permission": "workspace.project.read",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "validate": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_validate",
+            "workspaceToolId": "code-audit",
+            "permission": "workspace.project.read",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          },
+          "report-read": {
+            "mcpServer": "code-audit",
+            "mcpTool": "code_audit_report_read",
+            "workspaceToolId": "code-audit",
+            "permission": "workspace.project.read",
+            "roles": [
+              "parent",
+              "sub"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

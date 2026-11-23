@@ -349,14 +349,16 @@ class FirstPartySourceMaterializerTests(unittest.TestCase):
 
     def test_push_target_is_closed_to_the_exact_first_party_mapping(self) -> None:
         expected = "https://github.com/xsec-labs/xsec-plugin-sub-agent.git"
-        # Twelve active first-party packages plus the retired, disabled project-workspace record.
-        self.assertEqual(len(materializer.FIRST_PARTY_APPROVED_SOURCES), 13)
+        # Thirteen first-party packages (code-audit is approved ahead of its Registry entry) plus the retired,
+        # disabled project-workspace record.
+        self.assertEqual(len(materializer.FIRST_PARTY_APPROVED_SOURCES), 14)
         self.assertEqual(
             set(materializer.FIRST_PARTY_APPROVED_SOURCES),
             {
                 "com.xsec.asset-discovery",
                 "com.xsec.attack-path",
                 "com.xsec.binary-analysis",
+                "com.xsec.code-audit",
                 "com.xsec.jwt-analysis",
                 "com.xsec.project-workspace",
                 "com.xsec.system-terminal",

@@ -91,7 +91,11 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
 
     @requires_publication
     def test_registered_sources_follow_their_declared_sidecar_contract(self) -> None:
+        registered = {entry["pluginId"] for entry in json.loads((ROOT / ".xsec-factory" / "official-registry.json").read_text(encoding="utf-8"))["plugins"]}
         for plugin_id, expected_recipe in native_sidecars.RECIPES.items():
+            if plugin_id == native_sidecars.CODE_AUDIT_RECIPE.plugin_id and plugin_id not in registered:
+                # Only code-audit may have its recipe ahead of its Registry entry (no snapshot until first publication).
+                continue
             source = ROOT / ".xsec-factory" / "snapshots" / plugin_id
             self.assertTrue(source.is_dir(), f"registered plugin {plugin_id} has no retained snapshot")
             recipe = native_sidecars.recipe_for_source(plugin_id, source)
@@ -162,6 +166,33 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
             }
             with self.assertRaisesRegex(ValueError, "must declare only the allowlisted stdio servers"):
                 native_sidecars.validate_mcp_declaration(recipe, json.dumps(extra_stdio).encode(), "system-terminal mcp.json")
+
+    def test_code_audit_native_contract_pins_its_single_stdio_server(self) -> None:
+        recipe = native_sidecars.CODE_AUDIT_RECIPE
+        self.assertIs(native_sidecars.RECIPES[recipe.plugin_id], recipe)
+        self.assertEqual(recipe.source_repository, "xsec-labs/xSecDesktop")
+        self.assertEqual(
+            [target.rust_target for target in recipe.targets],
+            ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"],
+        )
+        self.assertEqual(str(native_sidecars.archive_path_for(recipe, recipe.targets[-1])), "bin/code-audit-mcp.exe")
+        servers = {"code-audit": {"type": "stdio", "command": "./bin/code-audit-mcp", "cwd": "${PLUGIN_DATA}"}}
+        with tempfile.TemporaryDirectory(prefix="xsec-code-audit-native-") as directory:
+            source = write_native_source(Path(directory), recipe, servers)
+            raw = (source / "mcp.json").read_bytes()
+            native_sidecars.validate_mcp_declaration(recipe, raw, "code-audit mcp.json")
+            with_args = json.loads(raw)
+            with_args["mcpServers"]["code-audit"]["args"] = ["--anything"]
+            with self.assertRaisesRegex(ValueError, "invalid arguments for code-audit"):
+                native_sidecars.validate_mcp_declaration(recipe, json.dumps(with_args).encode(), "code-audit mcp.json")
+            extra_stdio = json.loads(raw)
+            extra_stdio["mcpServers"]["code-audit-extra"] = {
+                "type": "stdio",
+                "command": "./bin/code-audit-mcp",
+                "cwd": "${PLUGIN_DATA}",
+            }
+            with self.assertRaisesRegex(ValueError, "must declare only the allowlisted stdio servers"):
+                native_sidecars.validate_mcp_declaration(recipe, json.dumps(extra_stdio).encode(), "code-audit mcp.json")
 
     def test_asset_discovery_native_contract_builds_all_platform_artifacts(self) -> None:
         recipe = native_sidecars.ASSET_DISCOVERY_RECIPE
