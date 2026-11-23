@@ -46,7 +46,6 @@ FIRST_PARTY_ROOT_PACKAGE_IDS = frozenset(
         "com.xsec.asset-discovery",
         "com.xsec.attack-path",
         "com.xsec.binary-analysis",
-        "com.xsec.code-audit",
         "com.xsec.jwt-analysis",
         "com.xsec.system-terminal",
         "com.xsec.workspace.approvals",

@@ -93,8 +93,8 @@ class NativeSidecarSourceContractTests(unittest.TestCase):
     def test_registered_sources_follow_their_declared_sidecar_contract(self) -> None:
         registered = {entry["pluginId"] for entry in json.loads((ROOT / ".xsec-factory" / "official-registry.json").read_text(encoding="utf-8"))["plugins"]}
         for plugin_id, expected_recipe in native_sidecars.RECIPES.items():
-            if plugin_id not in registered:
-                # A recipe can be added before its Registry entry; the plugin has no snapshot until it is published.
+            if plugin_id == native_sidecars.CODE_AUDIT_RECIPE.plugin_id and plugin_id not in registered:
+                # Only code-audit may have its recipe ahead of its Registry entry (no snapshot until first publication).
                 continue
             source = ROOT / ".xsec-factory" / "snapshots" / plugin_id
             self.assertTrue(source.is_dir(), f"registered plugin {plugin_id} has no retained snapshot")
