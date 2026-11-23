@@ -11,6 +11,7 @@ from pathlib import Path
 
 PROJECT_WORKSPACE_PLUGIN_ID = "com.xsec.project-workspace"
 ATTACK_PATH_PLUGIN_ID = "com.xsec.attack-path"
+SYSTEM_TERMINAL_PLUGIN_ID = "com.xsec.system-terminal"
 MARKETPLACE_PATH = Path(".agents/plugins/marketplace.json")
 REGISTRY_PATH = Path(".xsec-factory/official-registry.json")
 DISPLAY_NAME_KEY = "displayNameEn"
@@ -78,24 +79,44 @@ def registry_has_entry(document: dict[str, object], plugin_id: str) -> bool:
     return any(isinstance(entry, dict) and entry.get("pluginId") == plugin_id for entry in document["plugins"])
 
 
-def disable_project_workspace(registry: dict[str, object], marketplace: dict[str, object]) -> bool:
-    plugins, matches = marketplace_matches(marketplace, PROJECT_WORKSPACE_PLUGIN_ID)
-    if not registry_has_entry(registry, PROJECT_WORKSPACE_PLUGIN_ID):
-        # A Factory initialized after Desktop took over the project workspace never
-        # registered the package. With no Registry row, it must not be discoverable.
+def withdraw_default_plugin(
+    registry: dict[str, object],
+    marketplace: dict[str, object],
+    plugin_id: str,
+    label: str,
+) -> bool:
+    """Withdraw one default plugin from discovery and mark its Registry row disabled."""
+
+    plugins, matches = marketplace_matches(marketplace, plugin_id)
+    if not registry_has_entry(registry, plugin_id):
+        # A plugin without a Registry row must not be discoverable.
         if matches:
-            fail("project workspace is discoverable without an official Factory registry entry")
+            fail(f"{label} is discoverable without an official Factory registry entry")
         return False
-    entry = registry_entry(registry, PROJECT_WORKSPACE_PLUGIN_ID)
+    entry = registry_entry(registry, plugin_id)
     if entry.get("policy") != DEFAULT_POLICY or entry.get("status") not in {"active", "disabled"}:
-        fail("project workspace Registry policy or status is invalid")
+        fail(f"{label} Registry policy or status is invalid")
     if entry["status"] == "disabled" and not matches:
         return False
     if entry["status"] != "active" or len(matches) != 1:
-        fail("project workspace discovery and Registry status are not in one atomic state")
+        fail(f"{label} discovery and Registry status are not in one atomic state")
     entry["status"] = "disabled"
     del plugins[matches[0]]
     return True
+
+
+def disable_project_workspace(registry: dict[str, object], marketplace: dict[str, object]) -> bool:
+    # A Factory initialized after Desktop took over the project workspace never
+    # registered the package, so it must not be discoverable without a Registry row.
+    return withdraw_default_plugin(registry, marketplace, PROJECT_WORKSPACE_PLUGIN_ID, "project workspace")
+
+
+def withdraw_system_terminal(registry: dict[str, object], marketplace: dict[str, object]) -> bool:
+    # Desktop 0.3.9 rejects this plugin's native sidecar provenance, and one rejected
+    # release fails the whole official source refresh. Withdraw it from discovery
+    # until a Desktop release that allows the sidecar ships. The Registry row, its
+    # snapshot and its release history stay as disabled, append-only records.
+    return withdraw_default_plugin(registry, marketplace, SYSTEM_TERMINAL_PLUGIN_ID, "system terminal")
 
 
 def make_attack_path_available(registry: dict[str, object], marketplace: dict[str, object]) -> bool:
@@ -149,6 +170,7 @@ def apply_transition(root: Path) -> bool:
     registry = read_object(registry_path, "official Factory registry")
     changed = disable_project_workspace(registry, marketplace)
     changed = make_attack_path_available(registry, marketplace) or changed
+    changed = withdraw_system_terminal(registry, marketplace) or changed
     changed = sync_display_names(registry, marketplace) or changed
     if changed:
         write_object(registry_path, registry)

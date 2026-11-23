@@ -59,6 +59,7 @@ class MarketplaceDefaultsMaintenanceTests(unittest.TestCase):
         status: str = "active",
         discovered: bool = True,
         attack_available: bool = False,
+        system_terminal: bool = False,
     ) -> Path:
         root = Path(directory)
         retained_id = "com.xsec.workspace.files"
@@ -71,6 +72,9 @@ class MarketplaceDefaultsMaintenanceTests(unittest.TestCase):
         plugins = [marketplace_entry(maintenance.ATTACK_PATH_PLUGIN_ID, attack_policy), marketplace_entry(retained_id)]
         if discovered:
             plugins.insert(0, marketplace_entry(maintenance.PROJECT_WORKSPACE_PLUGIN_ID))
+        if system_terminal:
+            entries.append(registry_entry(maintenance.SYSTEM_TERMINAL_PLUGIN_ID))
+            plugins.append(marketplace_entry(maintenance.SYSTEM_TERMINAL_PLUGIN_ID))
         write_json(root / maintenance.REGISTRY_PATH, {"schemaVersion": 2, "plugins": entries})
         write_json(root / maintenance.MARKETPLACE_PATH, {"name": "xsec-official", "plugins": plugins})
         return root
@@ -88,6 +92,24 @@ class MarketplaceDefaultsMaintenanceTests(unittest.TestCase):
             self.assertEqual(registry["plugins"][0]["status"], "disabled")
             self.assertEqual(registry["plugins"][1]["policy"]["installation"], "AVAILABLE")
             self.assertEqual(active_default_official_plugin_ids(root), ("com.xsec.workspace.files",))
+
+    def test_system_terminal_withdrawal_keeps_its_disabled_registry_row(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-system-terminal-withdraw-") as directory:
+            root = self.make_root(directory, system_terminal=True)
+            self.assertTrue(maintenance.apply_transition(root))
+            marketplace = json.loads((root / maintenance.MARKETPLACE_PATH).read_text(encoding="utf-8"))
+            registry = json.loads((root / maintenance.REGISTRY_PATH).read_text(encoding="utf-8"))
+            self.assertNotIn(
+                maintenance.SYSTEM_TERMINAL_PLUGIN_ID,
+                [item["name"] for item in marketplace["plugins"]],
+            )
+            terminal = next(
+                row for row in registry["plugins"] if row["pluginId"] == maintenance.SYSTEM_TERMINAL_PLUGIN_ID
+            )
+            self.assertEqual(terminal["status"], "disabled")
+            self.assertEqual(terminal["policy"], {"installation": "INSTALLED_BY_DEFAULT", "authentication": "ON_INSTALL"})
+            self.assertNotIn(maintenance.SYSTEM_TERMINAL_PLUGIN_ID, active_default_official_plugin_ids(root))
+            self.assertFalse(maintenance.apply_transition(root))
 
     def test_completed_transition_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-default-set-noop-") as directory:
