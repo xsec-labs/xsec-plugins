@@ -1152,8 +1152,7 @@ jobs:
           elif [ "$EXTERNAL" = "true" ] && [ "$CHANNEL" = "beta" ] && test -z "$(git status --porcelain --untracked-files=all -- .agents/plugins .xsec-factory)"; then
             # A duplicate source delivery has neither changed immutable
             # metadata nor UI state. It must not create a new sidecar/PR or
-            # bypass the validated-merge Desktop dispatcher; an operator can
-            # use the separately audited smoke recovery path if needed.
+            # bypass the validated-merge Desktop dispatcher.
             python scripts/external_source_factory.py validate
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
           elif [ "$EXTERNAL" != "true" ]; then
