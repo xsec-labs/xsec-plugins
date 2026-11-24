@@ -60,6 +60,12 @@ Finalizer 合并前重新读取候选的来源分支头和 Factory main，使用
 职责见 [Finalizer policy](factory-finalizer-ruleset-policy.md)。来源前进或验证失败
 须生成/验证新的候选。
 
+发布 PR（`external-version-*`、`publish-*`）在 Finalizer 合并前还要过 Desktop 的四平台 Smoke：
+final workflow 向 xSecDesktop 派发 `xsec_official_marketplace_candidate`（载荷是该 PR 的精确 head 和分支），
+由 Desktop 的 `official-marketplace-candidate-smoke.yml` 在 Windows x64、Linux x64、macOS arm64、
+macOS x86_64 上验证，最多等待三小时。只有 Smoke 运行并失败才评论并关闭该 PR（不发布）；超时、取消或读不到结果时 PR 保持打开，
+等下一次触发重试。Smoke 通过后还要核对 PR head 和 main 没有变化才合并。
+
 历史 adoption assertion 和 materializer 用于解释拆仓时的来源映射。其旧 KMS 签署与
 两阶段 activation 操作已退役；当前注册和发布使用上述流程，历史证据保留在 Git 历史及
 不可变记录中。任何再次迁移都应先核对源字节、release history 和现行 validator。
