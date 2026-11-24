@@ -316,6 +316,12 @@ def assert_traffic_settings_isolation(case: unittest.TestCase, source: str) -> N
 class MarketplaceValidationTests(unittest.TestCase):
     maxDiff = None
 
+    def test_approvals_2_1_0_keeps_the_released_frontend_digest(self) -> None:
+        """2.1.0 only bumps the manifest; the redrawn frontend needs its own version."""
+
+        digests = validate_market.APPROVALS_FRONTEND_SOURCE_SHA256_BY_VERSION
+        self.assertEqual(digests["2.1.0"], digests["2.0.1"])
+
     def test_traffic_react_settings_contract_fixture(self) -> None:
         """Keep the reviewed React settings fixture pinned to its digest."""
 
