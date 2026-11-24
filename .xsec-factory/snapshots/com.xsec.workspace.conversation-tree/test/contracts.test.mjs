@@ -6,15 +6,15 @@ const pluginRoot = new URL("../", import.meta.url);
 const manifest = JSON.parse(await readFile(new URL("plugin.json", pluginRoot), "utf8"));
 const codexManifest = JSON.parse(await readFile(new URL(".codex-plugin/plugin.json", pluginRoot), "utf8"));
 
-test("dual manifests identify the same 2.0.0 release", () => {
+test("dual manifests identify the same 2.1.0 release", () => {
   assert.equal(manifest.name, codexManifest.name);
   assert.equal(manifest.version, codexManifest.version);
-  assert.equal(manifest.version, "2.0.0");
+  assert.equal(manifest.version, "2.1.0");
 });
 
 test("manifest commits a v2 single-esm frontend with exact tree methods", () => {
   const desktop = manifest.extensions["com.xsec.desktop"];
-  assert.equal(desktop.schemaVersion, 2);
+  assert.equal(desktop.schemaVersion, 3);
   assert.equal(desktop.contributes.agentTools, undefined);
   assert.equal(desktop.frontendApi.version, 2);
   assert.equal(desktop.frontendApi.module, "single-esm");

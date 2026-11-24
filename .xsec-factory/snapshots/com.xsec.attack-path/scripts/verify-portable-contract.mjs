@@ -40,7 +40,7 @@ const agentTools = Object.keys(extension?.contributes?.agentTools ?? {});
 
 requireContract(/^2\.\d+\.\d+$/.test(manifest.version), "attack-path must publish a v2 release");
 requireContract(catalog.version === manifest.version, "catalog version must match plugin version");
-requireContract(extension?.schemaVersion === 2, "attack-path must use schema v2");
+requireContract(extension?.schemaVersion === 3, "attack-path must use schema v3");
 requireContract(extension?.activationEvents?.includes(EXPECTED_ACTIVATION), "agent tool activation must name its contribution");
 requireContract(
   extension?.dependencies?.required?.["com.xsec.workspace.sub-agent"] === EXPECTED_DEPENDENCY,
