@@ -21,7 +21,7 @@ rtk python3 /Volumes/xsec-build/evidence/2026-10-20-jwt-frontend-lifecycle/check
 rtk python3 scripts/verify_package.py
 ```
 
-两条命令均通过。检查包括浏览器输入哈希、五项基线失败与五项当前通过、JavaScript/Python 语法、完整 JWT 官方前端源码门禁、diff 检查，以及 manifest、RockYou、SBOM 许可证和包大小。手动浏览器运行说明见 `tests/browser_lifecycle/README.md`。
+两条命令均通过。检查包括浏览器输入哈希、五项基线失败与五项当前通过、JavaScript/Python 语法、完整 JWT 官方前端源码门禁、diff 检查，以及 manifest、SBOM 许可证和包大小。手动浏览器运行说明见 `tests/browser_lifecycle/README.md`。
 
 本轮真实边界为浏览器、HTTP 和隔离 SQLite。Desktop 原生 Host、授权及 MCP 传输仍需独立验收；设置保存和报告下载也尚未单独验收。原生平台矩阵和发布验收待后续执行。
 

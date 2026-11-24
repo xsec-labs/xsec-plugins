@@ -16,6 +16,21 @@
         "url": "artifacts/com.xsec.jwt-analysis-1.0.0-sha256-cdfe7da27ec6e646-macos-aarch64.xsec-plugin"
       },
       "publisher": "xsec-marketplace-bot"
+    },
+    {
+      "channel": "beta",
+      "releaseId": "sha256-033c9f7fe7fcbfe61dbab839efaedf031ac112528a1225c34bf231cbfc252221",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-jwt-analysis",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "b7a71e09cd493d93fab3e42d58541484e9166d4a"
+      },
+      "artifact": {
+        "sha256": "8839379a33ffda565ac6ae66af66c0304ba9ebec2d47bc134d9e2fb7e6e758fb",
+        "url": "artifacts/com.xsec.jwt-analysis-1.1.0-sha256-8839379a33ffda56-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
     }
   ]
 }

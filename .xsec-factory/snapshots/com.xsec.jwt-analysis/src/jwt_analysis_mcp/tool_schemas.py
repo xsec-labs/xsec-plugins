@@ -20,7 +20,7 @@ TOOLS = [
             "token": {"type": "string"}, "flow_id": {"type": "string"}, "path": {"type": "string"},
             "items": {"type": "array", "items": {"type": "string"}}}, "required": ["kind"]},
         "profile": {"enum": ["full", "passive"]},
-        "wordlists": {"type": "array", "items": {"enum": ["jwt-common", "rockyou", "custom"]}},
+        "wordlists": {"type": "array", "items": {"enum": ["jwt-common", "custom"]}},
         "custom_wordlists": {"type": "array", "items": {"type": "string"}},
         "request": {"type": ["string", "object"], "description": "Explicit authorized HTTP/1.x baseline request."},
         "scheme": {"enum": ["http", "https"]}, "canary": {"type": "string"},

@@ -45,12 +45,7 @@ def common_claims() -> tuple[str, ...]:
 
 
 def diagnostics() -> dict[str, Any]:
-    plugin_root = os.environ.get("PLUGIN_ROOT")
-    root = Path(plugin_root).resolve() if plugin_root else Path(__file__).resolve().parents[2]
-    wordlist = root / "wordlists" / "rockyou.txt.tar.gz"
-    return {"jwt_tool_version": UPSTREAM_VERSION, "sidecar": "ready",
-            "rockyou_available": wordlist.is_file(),
-            "rockyou_archive_bytes": wordlist.stat().st_size if wordlist.is_file() else 0}
+    return {"jwt_tool_version": UPSTREAM_VERSION, "sidecar": "ready"}
 
 
 def safe_exploits(parsed: dict[str, Any]) -> dict[str, Any]:
