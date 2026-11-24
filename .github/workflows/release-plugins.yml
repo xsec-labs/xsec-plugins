@@ -127,27 +127,47 @@ jobs:
           }
 
           # The run is found by its run-name, which publish.yml derives from its inputs.
+          # Only runs created after the dispatch (a larger run id than any seen
+          # before it) count, so an earlier failed attempt can never be mistaken
+          # for the new one.
+          latest_publish_run_id() {
+            gh run list --workflow publish.yml --event workflow_dispatch --json databaseId --limit 1 \
+              | jq -r '.[0].databaseId // 0'
+          }
+
           find_run() {
-            local id="$1" short="$2" since="$3" run=""
+            local id="$1" short="$2" after="$3" run=""
             for _ in $(seq 1 20); do
-              run="$(gh run list --workflow publish.yml --event workflow_dispatch --created ">=${since}" \
+              run="$(gh run list --workflow publish.yml --event workflow_dispatch \
                 --json databaseId,displayTitle --limit 50 \
-                | jq -r --arg id "$id" --arg sha "$short" \
-                  '[.[] | select((.displayTitle | contains($id)) and (.displayTitle | contains($sha)))][0].databaseId // empty')"
+                | jq -r --arg id "$id" --arg sha "$short" --argjson after "$after" \
+                  '[.[] | select(.databaseId > $after and (.displayTitle | contains($id)) and (.displayTitle | contains($sha)))][0].databaseId // empty')"
               [ -z "$run" ] || { echo "$run"; return 0; }
               sleep 15
             done
             return 1
           }
 
+          # No dispatched publication may still be queued or running before another
+          # one starts: they share one publication slot and GitHub keeps one pending run.
+          wait_for_publish_idle() {
+            local waited=0
+            while [ "$(gh run list --workflow publish.yml --event workflow_dispatch --json status \
+              --jq '[.[] | select(.status != "completed")] | length')" != "0" ]; do
+              [ "$waited" -lt 14400 ] || return 1
+              sleep 60
+              waited=$((waited + 60))
+            done
+          }
+
           publish_once() {
-            local id="$1" sha="$2" short="${2:0:12}" since desktop_sha run conclusion waited
+            local id="$1" sha="$2" short="${2:0:12}" before desktop_sha run conclusion waited
             desktop_sha="$(GH_TOKEN="$DESKTOP_TOKEN" gh api repos/xsec-labs/xSecDesktop/commits/main --jq .sha)"
             [[ "$desktop_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Desktop main did not resolve to a commit." >&2; return 1; }
-            since="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)"
+            before="$(latest_publish_run_id)"
             gh workflow run publish.yml --ref main \
               -f maintenance=release -f plugin_id="$id" -f source_sha="$sha" -f native_sidecars_source_sha="$desktop_sha" || return 1
-            run="$(find_run "$id" "$short" "$since")" || { echo "publish.yml run for $id did not appear." >&2; return 1; }
+            run="$(find_run "$id" "$short" "$before")" || { echo "publish.yml run for $id did not appear." >&2; return 1; }
             echo "publish.yml run $run for $id @ $short"
             waited=0
             while :; do
@@ -180,7 +200,7 @@ jobs:
             echo "::group::Release $id $version"
             ok=false
             for attempt in 1 2; do
-              if wait_for_idle_factory && publish_once "$id" "$sha"; then ok=true; break; fi
+              if wait_for_publish_idle && wait_for_idle_factory && publish_once "$id" "$sha"; then ok=true; break; fi
               echo "Attempt $attempt for $id failed."
             done
             echo "::endgroup::"
