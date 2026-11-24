@@ -45,6 +45,10 @@ def native_source(root: Path) -> Path:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     desktop = manifest["extensions"]["com.xsec.desktop"]
     desktop["schemaVersion"] = 2
+    # The retained snapshot is schemaVersion 3 with a builtin native entrypoint
+    # since attack-path 2.1.0; this fixture is the schemaVersion 2 sidecar
+    # layout, which has no native entrypoint.
+    desktop["entrypoints"].pop("native", None)
     desktop["permissions"] = {"mcp.servers.register": {}, "native.execute": {}}
     write_json(manifest_path, manifest)
     write_json(source / "mcp.json", {"mcpServers": {"attack-path": {

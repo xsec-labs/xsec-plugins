@@ -1,18 +1,18 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "com.xsec.jwt-analysis",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Project-scoped JWT parsing, secret auditing, authorized N-day tests and evidence",
   "author": { "name": "XSEC" },
   "license": "GPL-3.0-only",
   "extensions": {
     "com.xsec.desktop": {
-      "schemaVersion": 2,
+      "schemaVersion": 3,
       "displayName": "JWT 分析",
       "publisher": "XSEC",
       "icon": "bug",
       "engines": { "xsec": ">=0.1.0", "pluginApi": "^1.5.0" },
-      "entrypoints": { "frontend": "./com.xsec.desktop/frontend/index.js" },
+      "entrypoints": { "frontend": "./com.xsec.desktop/frontend/index.js", "native": "builtin:com.xsec.jwt-analysis" },
       "activationEvents": ["onWorkspaceTool:jwt-analysis", "onSettingsPage:settings", "onAgentTool:jwt_analysis_create"],
       "permissions": {
         "workspace.project.read": { "reason": "Bind analysis jobs to the active project" },

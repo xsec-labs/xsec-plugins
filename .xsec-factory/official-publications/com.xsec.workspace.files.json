@@ -16,6 +16,21 @@
         "url": "artifacts/com.xsec.workspace.files-2.0.0-sha256-49f5bba2a9a0e69a-any-any.xsec-plugin"
       },
       "publisher": "xsec-marketplace-bot"
+    },
+    {
+      "channel": "beta",
+      "releaseId": "sha256-b1fafd7329fae08f2243ce197321d0e80667e6b4e49a4eb5935d01296d3716e4",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-files",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "fbcd16462dba743989e12e9f35c4f278fd0d7d5b"
+      },
+      "artifact": {
+        "sha256": "5bf3ecec75e1ce25ebcebe1f9a83265539d4b9bc615492dcb507169fff483641",
+        "url": "artifacts/com.xsec.workspace.files-2.1.0-sha256-5bf3ecec75e1ce25-any-any.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
     }
   ]
 }

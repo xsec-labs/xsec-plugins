@@ -71,12 +71,10 @@ def _add_static_results(job_id: str, item: dict[str, Any], parsed: dict[str, Any
 
 
 def _wordlist_paths(settings: dict[str, Any], plugin_root: Path) -> list[tuple[str, Path]]:
-    wordlists = settings.get("wordlists", ["jwt-common", "rockyou", "custom"])
+    wordlists = settings.get("wordlists", ["jwt-common", "custom"])
     paths = []
     if "jwt-common" in wordlists:
         paths.append(("jwt-common", plugin_root / "wordlists" / "jwt-common.txt"))
-    if "rockyou" in wordlists and settings.get("rockyou_enabled", True):
-        paths.append(("rockyou", plugin_root / "wordlists" / "rockyou.txt.tar.gz"))
     if "custom" in wordlists:
         for path in settings.get("custom_wordlists", []):
             paths.append(("custom:" + hashlib.sha256(path.encode()).hexdigest()[:12], Path(path)))
@@ -105,8 +103,6 @@ def _find_secret(job_id: str, token: str, parsed: dict[str, Any], settings: dict
             try:
                 candidate.decode("utf-8")
             except UnicodeDecodeError:
-                if name != "rockyou":
-                    raise
                 invalid_utf8 += 1
                 total_invalid_utf8 += 1
                 continue
@@ -124,26 +120,36 @@ def _find_secret(job_id: str, token: str, parsed: dict[str, Any], settings: dict
     return None
 
 
+def _require_one_regular_member(name: str, path: Path) -> None:
+    """Reject an archive that holds other regular files, because only one of them is read."""
+    with tarfile.open(path, mode="r|gz") as archive:
+        regular = sum(1 for item in archive if item.isfile())
+    if regular != 1:
+        raise ValueError(f"wordlist archive must contain exactly one regular file, found {regular}: {name}")
+
+
 def _read_wordlist(name: str, path: Path) -> Iterator[bytes]:
+    """Yield raw lines of a dictionary, or of the only regular file in a .tar.gz archive.
+
+    Lines are not decoded here. The caller counts and skips lines that are not valid UTF-8.
+    """
     if not path.is_file():
         raise FileNotFoundError(f"configured JWT wordlist is unavailable: {name}")
-    if name == "rockyou":
+    if path.name.endswith(".tar.gz"):
+        _require_one_regular_member(name, path)
         with tarfile.open(path, mode="r|gz") as archive:
-            member = next((item for item in archive if item.name.endswith("rockyou.txt")), None)
-            if member is None or not member.isfile():
-                raise ValueError("RockYou archive does not contain a regular rockyou.txt file")
+            member = next((item for item in archive if item.isfile()), None)
+            if member is None:
+                raise ValueError(f"wordlist archive contains no regular file: {name}")
             stream = archive.extractfile(member)
             if stream is None:
-                raise ValueError("RockYou archive entry cannot be read")
+                raise ValueError(f"wordlist archive entry cannot be read: {name}")
             for line in stream:
                 yield line.rstrip(b"\r\n")
         return
     with path.open("rb") as stream:
         for line in stream:
-            candidate = line.rstrip(b"\r\n")
-            if name.startswith("custom:"):
-                candidate.decode("utf-8")
-            yield candidate
+            yield line.rstrip(b"\r\n")
 
 
 def _save_key_hit(job_id: str, token: str, parsed: dict[str, Any], name: str,

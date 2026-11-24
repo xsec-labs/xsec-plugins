@@ -99,7 +99,7 @@ export async function rotateCa(host: PluginHost): Promise<CaStatus> {
 function passiveRule(value: unknown): PassiveRule {
   const row = object(value, "被动规则");
   const severity = string(row.severity, "规则级别");
-  if (!new Set(["low", "medium", "high", "critical"]).has(severity)) throw new Error("规则级别格式无效");
+  if (!new Set(["info", "low", "medium", "high", "critical"]).has(severity)) throw new Error("规则级别格式无效");
   return {
     rule_id: string(row.rule_id, "规则 ID"),
     severity: severity as PassiveRule["severity"],
