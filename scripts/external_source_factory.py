@@ -495,6 +495,12 @@ def require_link_free_tree(root: Path, label: str, *, excluded_names: frozenset[
                 fail(f"{label} must not contain symbolic links: {path.relative_to(root).as_posix()}")
 
 
+# Every plugin source releases from its repository's single ``main`` branch.
+SOURCE_REF = "refs/heads/main"
+# The branch Beta used before that; kept only to read history written under it.
+LEGACY_BETA_REF = "refs/heads/beta"
+
+
 @dataclass(frozen=True)
 class Registration:
     plugin_id: str
@@ -575,8 +581,10 @@ def parse_registration(
     source_path = safe_source_path(source.get("path"), f"{label}.source.path")
     refs = require_object(source.get("refs"), f"{label}.source.refs")
     require_exact_keys(refs, {"beta", "stable"}, f"{label}.source.refs")
-    if refs.get("beta") != "refs/heads/beta" or refs.get("stable") != "refs/heads/main":
-        fail(f"{label}.source.refs must map beta to refs/heads/beta and stable to refs/heads/main")
+    # Plugins release from their single ``main`` branch. ``LEGACY_BETA_REF`` is
+    # accepted only so the trusted baseline of the one-time migration still loads.
+    if refs.get("beta") not in {SOURCE_REF, LEGACY_BETA_REF} or refs.get("stable") != SOURCE_REF:
+        fail(f"{label}.source.refs must map beta and stable to {SOURCE_REF}")
     policy = require_object(entry.get("policy"), f"{label}.policy")
     require_exact_keys(policy, {"installation", "authentication"}, f"{label}.policy")
     if trust_tier == "external":
@@ -617,8 +625,8 @@ def parse_registration(
         trust_tier=str(trust_tier),
         repository=repository,
         source_path=source_path,
-        beta_ref="refs/heads/beta",
-        stable_ref="refs/heads/main",
+        beta_ref=str(refs["beta"]),
+        stable_ref=str(refs["stable"]),
         installation=str(policy["installation"]),
         authentication=str(policy["authentication"]),
         category=category,
@@ -2712,7 +2720,10 @@ def validate_evidence(
         source = require_object(event.get("source"), f"{label}.source")
         require_exact_keys(source, {"repository", "path", "ref", "sha"}, f"{label}.source")
         source_path = source.get("path")
-        if source.get("repository") != registration.repository or source.get("ref") != registration.ref_for(str(channel)):
+        allowed_refs = {registration.ref_for(str(channel))}
+        if channel == "beta":
+            allowed_refs.add(LEGACY_BETA_REF)
+        if source.get("repository") != registration.repository or source.get("ref") not in allowed_refs:
             fail(f"{label} source does not match the official registry")
         if source_path == registration.source_path.as_posix():
             current_layout_seen = True
@@ -3391,6 +3402,7 @@ def validate_trusted_baseline_continuity(
             or registration.repository != baseline_registration.repository
             or not layout_transition and registration.source_path != baseline_registration.source_path
             or registration.beta_ref != baseline_registration.beta_ref
+            and not (baseline_registration.beta_ref == LEGACY_BETA_REF and registration.beta_ref == SOURCE_REF)
             or registration.stable_ref != baseline_registration.stable_ref
         ):
             fail(

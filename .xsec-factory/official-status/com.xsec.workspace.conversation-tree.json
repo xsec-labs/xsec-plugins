@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-conversation-tree",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/beta",
+      "beta": "refs/heads/main",
       "stable": "refs/heads/main"
     },
     "betaSha": "422fd68bc2f475f20d223e773011490666d178c8",

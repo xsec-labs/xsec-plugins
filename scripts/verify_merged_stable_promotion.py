@@ -641,13 +641,21 @@ def active_registered_source(
     ):
         fail(f"registered publication plugin {plugin_id} has invalid source identity")
     refs = source.get("refs")
-    if not isinstance(refs, dict) or refs.get("beta") != "refs/heads/beta" or refs.get("stable") != "refs/heads/main":
+    # Plugins release from their single ``main`` branch. A registry written
+    # before that change still maps beta to ``refs/heads/beta`` until its
+    # one-time migration lands.
+    if (
+        not isinstance(refs, dict)
+        or set(refs) != {"beta", "stable"}
+        or refs.get("beta") not in {"refs/heads/main", "refs/heads/beta"}
+        or refs.get("stable") != "refs/heads/main"
+    ):
         fail(f"registered publication plugin {plugin_id} has invalid source refs")
     return {
         "repository": str(source["repository"]),
         "path": str(source["path"]),
-        "beta_ref": "refs/heads/beta",
-        "stable_ref": "refs/heads/main",
+        "beta_ref": str(refs["beta"]),
+        "stable_ref": str(refs["stable"]),
         "trust_tier": str(trust_tier),
     }
 

@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-sub-agent",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/beta",
+      "beta": "refs/heads/main",
       "stable": "refs/heads/main"
     },
     "betaSha": "83a5d13b4b269387c5dbf37df2eff2788b69f7e3",

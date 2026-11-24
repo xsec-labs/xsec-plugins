@@ -494,6 +494,30 @@ class ExternalSourceFactoryTests(unittest.TestCase):
                     with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "GitHub slug|below the checked-out|forward-slash"):
                         factory.load_registry(root)
 
+    def test_registry_releases_from_the_single_main_branch(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-external-single-branch-") as directory:
+            root = Path(directory)
+            single = self.registry_entry()
+            single["source"]["refs"] = {"beta": "refs/heads/main", "stable": "refs/heads/main"}
+            self.make_factory(root, single)
+            (registration,) = factory.load_registry(root)
+            self.assertEqual(registration.ref_for("beta"), "refs/heads/main")
+            self.assertEqual(registration.ref_for("stable"), "refs/heads/main")
+            # A registry written before the single-branch release still loads (trusted baseline).
+            self.make_factory(root, self.registry_entry())
+            (legacy,) = factory.load_registry(root)
+            self.assertEqual(legacy.ref_for("beta"), "refs/heads/beta")
+            for refs in (
+                {"beta": "refs/heads/main", "stable": "refs/heads/beta"},
+                {"beta": "refs/heads/release", "stable": "refs/heads/main"},
+            ):
+                with self.subTest(refs=refs):
+                    entry = self.registry_entry()
+                    entry["source"]["refs"] = refs
+                    self.make_factory(root, entry)
+                    with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "source.refs must map beta and stable"):
+                        factory.load_registry(root)
+
     def test_registry_rejects_the_desktop_owned_plugin_namespace(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-external-reserved-plugin-") as directory:
             root = Path(directory)

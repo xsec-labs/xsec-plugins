@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-project-outcomes",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/beta",
+      "beta": "refs/heads/main",
       "stable": "refs/heads/main"
     },
     "betaSha": "394457a78e94b51a9fab4bc958de914369d7ef74",
