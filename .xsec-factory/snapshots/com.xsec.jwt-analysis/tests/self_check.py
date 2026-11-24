@@ -3,10 +3,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import json
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -71,7 +73,7 @@ def check_database_and_secret_adapter(temp: Path) -> None:
     secret = b"jwt-tool-fixture-secret"
     signed = token(secret)
     dictionary = temp / "custom.txt"
-    dictionary.write_bytes(b"wrong\n" + secret + b"\n")
+    dictionary.write_bytes(b"wrong\n\xff\xfe\n" + secret + b"\n")
     os.environ["PLUGIN_DATA"] = str(temp / "data")
     store = Store(os.environ["PLUGIN_DATA"])
     source = {"items": [{"token": signed, "source": "test"}], "profile": "passive"}
@@ -135,7 +137,7 @@ def check_loopback_http(temp: Path) -> None:
     thread.join(timeout=3)
 
 
-def check_parser_and_rockyou() -> None:
+def check_parser_and_wordlists(temp: Path) -> None:
     signed = token(b"x")
     parsed = jwt.parse(signed)
     assert parsed["payload"]["sub"] == "alice"
@@ -148,23 +150,97 @@ def check_parser_and_rockyou() -> None:
         pass
     else:
         raise AssertionError("malformed JWT accepted")
-    first = next(probe_wordlist())
-    assert first
+    check_wordlist_reader(temp)
 
 
-def probe_wordlist():
-    from jwt_analysis_mcp.engine import _read_wordlist
-    return _read_wordlist("rockyou", ROOT / "wordlists" / "rockyou.txt.tar.gz")
+def check_wordlist_reader(temp: Path) -> None:
+    from jwt_analysis_mcp.engine import _read_wordlist, _wordlist_paths
+    from jwt_analysis_mcp.settings import merge
+
+    payload = b"alpha\n\xffinvalid\nbeta\r\n"
+    plain = temp / "words.txt"
+    plain.write_bytes(payload)
+    archive = temp / "words.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        info = tarfile.TarInfo("words.txt")
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+    expected = [b"alpha", b"\xffinvalid", b"beta"]
+    assert list(_read_wordlist("custom:plain", plain)) == expected
+    assert list(_read_wordlist("custom:archive", archive)) == expected
+    two_files = temp / "two-files.tar.gz"
+    with tarfile.open(two_files, "w:gz") as tar:
+        for member_name, member_payload in (("first.txt", payload), ("second.txt", b"gamma\n")):
+            info = tarfile.TarInfo(member_name)
+            info.size = len(member_payload)
+            tar.addfile(info, io.BytesIO(member_payload))
+    try:
+        list(_read_wordlist("custom:two-files", two_files))
+    except ValueError as error:
+        assert "exactly one regular file, found 2" in str(error)
+    else:
+        raise AssertionError("archive with two regular files was accepted")
+    empty = temp / "empty.tar.gz"
+    with tarfile.open(empty, "w:gz"):
+        pass
+    try:
+        list(_read_wordlist("custom:empty", empty))
+    except ValueError as error:
+        assert "exactly one regular file, found 0" in str(error)
+    else:
+        raise AssertionError("archive without a regular file was accepted")
+    assert [name for name, _ in _wordlist_paths({}, ROOT)] == ["jwt-common"]
+    custom = _wordlist_paths({"wordlists": ["custom"], "custom_wordlists": [str(plain)]}, ROOT)
+    assert len(custom) == 1 and custom[0][0].startswith("custom:")
+    legacy = merge({"wordlists": ["jwt-common", "rockyou"], "rockyou_enabled": True})
+    assert legacy["wordlists"] == ["jwt-common"] and "rockyou_enabled" not in legacy
+    try:
+        merge({"wordlists": ["bogus"]})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsupported dictionary id accepted")
+
+
+def check_tls_verification_default() -> None:
+    """The bundled jwt_tool verifies certificates unless jwtconf.ini opts out (JWT-1)."""
+    from configparser import ConfigParser
+    from unittest import mock
+
+    from jwt_analysis_mcp.jwt_tool_adapter import module as jwt_tool_module
+
+    tool = jwt_tool_module()
+
+    def send(services: dict[str, str]) -> dict[str, object]:
+        config = ConfigParser(allow_no_value=True)
+        config.optionxform = str
+        config["argvals"] = {"postData": "", "targetUrl": "https://target.invalid/"}
+        config["customising"] = {"useragent": "jwt_tool-check"}
+        config["services"] = {"proxy": "False", "redir": "True", **services}
+        response = mock.Mock(status_code=200, content=b"")
+        response.elapsed.total_seconds.return_value = 0.0
+        tool.config = config
+        with mock.patch.object(tool.requests, "get", return_value=response) as get:
+            tool.sendToken("token", {}, "check")
+        return get.call_args.kwargs
+
+    default = send({})
+    if default["verify"] is not True or default["proxies"] is not None:
+        raise AssertionError(f"jwt_tool must verify certificates and use the host proxy by default: {default}")
+    disabled = send({"tls_verify": "False"})
+    if disabled["verify"] is not False:
+        raise AssertionError(f"tls_verify = False must disable certificate checks: {disabled}")
 
 
 def main() -> None:
-    check_parser_and_rockyou()
-    check_mcp_protocol()
     with tempfile.TemporaryDirectory(prefix="xsec-jwt-check-") as directory:
         temp = Path(directory)
+        check_parser_and_wordlists(temp)
+        check_mcp_protocol()
+        check_tls_verification_default()
         check_database_and_secret_adapter(temp)
         check_loopback_http(temp)
-    print("JWT Sidecar checks passed: MCP stdio, SQLite isolation, jwt_tool secret check, loopback HTTP")
+    print("JWT Sidecar checks passed: MCP stdio, SQLite isolation, jwt_tool secret check, TLS default, loopback HTTP")
 
 
 if __name__ == "__main__":

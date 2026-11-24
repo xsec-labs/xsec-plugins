@@ -4,8 +4,7 @@ from typing import Any
 
 
 DEFAULTS = {
-    "wordlists": ["jwt-common", "rockyou", "custom"],
-    "rockyou_enabled": True,
+    "wordlists": ["jwt-common", "custom"],
     "custom_wordlists": [],
     "max_concurrent_jobs": 2,
     "max_requests_per_job": 100,
@@ -25,14 +24,17 @@ def merge(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("JWT analysis settings are invalid")
     settings = {**DEFAULTS, **value}
-    _string_list(settings, "wordlists", ("jwt-common", "rockyou", "custom"))
+    # RockYou is no longer bundled. Settings saved by earlier versions may still name it.
+    settings.pop("rockyou_enabled", None)
+    if isinstance(settings["wordlists"], list):
+        settings["wordlists"] = [item for item in settings["wordlists"] if item != "rockyou"]
+    _string_list(settings, "wordlists", ("jwt-common", "custom"))
     _string_list(settings, "custom_wordlists")
     _string_list(settings, "jwks_allowlist")
     _integer(settings, "max_concurrent_jobs", 1, 8)
     _integer(settings, "max_requests_per_job", 1, 100)
     _integer(settings, "rate_limit", 1, 60)
     _integer(settings, "request_timeout_seconds", 1, 60)
-    _boolean(settings, "rockyou_enabled")
     _boolean(settings, "tls_verify")
     _boolean(settings, "listener_enabled")
     if settings["redirect_policy"] not in ("disabled", "same-origin"):

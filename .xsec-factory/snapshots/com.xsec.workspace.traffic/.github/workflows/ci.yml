@@ -65,7 +65,7 @@ jobs:
           if (manifest.name !== expectedId || typeof manifest.version !== "string" || !manifest.version) process.exit(1);
           const desktop = manifest.extensions?.["com.xsec.desktop"];
           if (!desktop || typeof desktop !== "object" || Array.isArray(desktop)) process.exit(1);
-          if (desktop.schemaVersion !== 2 || desktop.contributes?.agentTools !== undefined) process.exit(1);
+          if (desktop.schemaVersion !== 3 || desktop.contributes?.agentTools !== undefined) process.exit(1);
           const engines = desktop.engines;
           if (!engines || typeof engines !== "object" || Array.isArray(engines)) process.exit(1);
           if (engines.xsec !== ">=0.1.0" || engines.pluginApi !== "^1.5.0") process.exit(1);

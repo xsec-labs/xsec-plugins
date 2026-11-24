@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "validate": "node scripts/validate-plugin.mjs"
+    "validate": "node scripts/validate-plugin.mjs",
+    "test": "node --test tests/frontend-validators.test.mjs"
   },
   "devDependencies": {
     "ajv": "8.20.0",
