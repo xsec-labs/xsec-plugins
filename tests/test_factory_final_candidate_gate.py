@@ -106,7 +106,6 @@ class FactoryFinalCandidateGateWorkflowTests(unittest.TestCase):
     def test_every_generated_candidate_skips_bot_review_requests(self) -> None:
         workflows = (
             "publish.yml",
-            "publish-marketplace-batch.yml",
             "stage-first-party-adoption.yml",
             "adopt-first-party.yml",
             "refresh-retained-sidecars.yml",

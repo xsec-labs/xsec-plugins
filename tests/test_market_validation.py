@@ -2573,7 +2573,7 @@ export function renderPlaceholder() {}
     def test_native_sidecar_shell_steps_name_their_shell_on_windows(self) -> None:
         import yaml
 
-        for name in ("publish.yml", "publish-marketplace-batch.yml"):
+        for name in ("publish.yml",):
             workflow = yaml.safe_load((ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
             job = workflow["jobs"]["build-native-sidecars"]
             self.assertNotIn("defaults", job)
@@ -2655,7 +2655,6 @@ export function renderPlaceholder() {}
 
     def test_publish_builds_every_native_sidecar_the_release_requires(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
-        batch = (ROOT / ".github" / "workflows" / "publish-marketplace-batch.yml").read_text(encoding="utf-8")
         sidecar_job = workflow.split("  build-native-sidecars:\n", 1)[1].split("  sign-and-publish:\n", 1)[0]
         signing_job = workflow.split("  sign-and-publish:\n", 1)[1]
         # The release step requires these sidecars on every target,
@@ -2668,7 +2667,7 @@ export function renderPlaceholder() {}
         self.assertIn('runtime_root="$output_dir/browser-runtime"', sidecar_job)
         self.assertIn("$runtimeRoot = Join-Path $outputDirectory 'browser-runtime'", sidecar_job)
         self.assertIn('runtime="$sidecar_root/xsec-native-sidecars-$target/browser-runtime"', signing_job)
-        for text in (workflow, batch):
+        for text in (workflow,):
             self.assertNotIn("'binary-analysis-mcp.exe')", text.replace('release/binary-analysis-mcp.exe"', ""))
             # Corepack resolves pnpm from the current directory's package.json;
             # --dir from this repository's root would pick its default pnpm.
