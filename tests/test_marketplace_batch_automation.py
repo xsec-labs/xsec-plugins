@@ -100,6 +100,13 @@ class MarketplaceBatchAutomationTests(unittest.TestCase):
         # its digests, and the whole batch fails on the preflight.
         self.assertNotIn('[ "$native_plugin" = "com.xsec.binary-analysis" ] || [ "$native_plugin" = "com.xsec.jwt-analysis" ]', publisher)
         self.assertNotIn('if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then\n              reusable=false', publisher)
+        # A plugin that appended no release keeps its official status: the
+        # version publication verifier rejects status changes beside no release.
+        self.assertIn('git status --porcelain --untracked-files=all -- ".xsec-factory/snapshots/${plugin_id}/.xsec-market/releases.json"', publisher)
+        self.assertLess(
+            publisher.index("leaving its official status unchanged."),
+            publisher.index('python scripts/external_source_factory.py record-status --plugin-id "$plugin_id"'),
+        )
         self.assertNotIn("permission-checks: read", publisher)
         self.assertNotIn("branches/main --jq .protected", publisher)
         self.assertNotIn("Desktop main must remain protected", publisher)
