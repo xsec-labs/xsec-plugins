@@ -83,7 +83,7 @@ jobs:
           GH_TOKEN: ${{ steps.binary-source-token.outputs.token }}
         run: |
           set -euo pipefail
-          source_sha="$(gh api repos/xsec-labs/xsec-plugin-binary-analysis/git/ref/heads/beta --jq .object.sha)"
+          source_sha="$(gh api repos/xsec-labs/xsec-plugin-binary-analysis/git/ref/heads/main --jq .object.sha)"
           [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Binary-analysis Beta did not resolve to a canonical commit SHA." >&2; exit 1; }
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - name: Resolve the current jwt-analysis Beta revision
@@ -92,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ steps.binary-source-token.outputs.token }}
         run: |
           set -euo pipefail
-          source_sha="$(gh api repos/xsec-labs/xsec-plugin-jwt-analysis/git/ref/heads/beta --jq .object.sha)"
+          source_sha="$(gh api repos/xsec-labs/xsec-plugin-jwt-analysis/git/ref/heads/main --jq .object.sha)"
           [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "JWT-analysis Beta did not resolve to a canonical commit SHA." >&2; exit 1; }
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
   build-native-sidecars:
@@ -476,7 +476,7 @@ jobs:
             ]
             | if length == 12
                 and all(.[]; (.plugin_id | type == "string") and (.repository | type == "string")
-                  and .beta_ref == "refs/heads/beta" and .stable_ref == "refs/heads/main")
+                  and .beta_ref == "refs/heads/main" and .stable_ref == "refs/heads/main")
               then sort_by(.plugin_id)
               else error("Factory must have exactly twelve active plugin sources") end
           ' .xsec-factory/official-registry.json)"
@@ -647,6 +647,14 @@ jobs:
             python scripts/external_source_factory.py record-beta --plugin-id "$plugin_id" --source-sha "$beta_sha" --publisher xsec-marketplace-bot >/dev/null
             gate="$(python scripts/external_source_factory.py --json check-main-rebuild --plugin-id "$plugin_id" --source-root "${source_root}-main")"
             state="$(printf '%s' "$gate" | jq -er .state)"
+            # A plugin whose retained Beta was reproduced appends no release, so
+            # its status stays as the last delivery left it: the version
+            # publication verifier authorizes status changes only beside a
+            # release that moved, and rejects the generated PR otherwise.
+            if [ -z "$(git status --porcelain --untracked-files=all -- ".xsec-factory/snapshots/${plugin_id}/.xsec-market/releases.json")" ]; then
+              echo "${plugin_id} appended no release; leaving its official status unchanged."
+              continue
+            fi
             python scripts/external_source_factory.py record-status --plugin-id "$plugin_id" --beta-sha "$beta_sha" \
               --main-gate-sha "$main_sha" --state "$state" --delivery-id "batch-${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}" \
               --factory-run-url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null

@@ -53,29 +53,6 @@
       ]
     },
     {
-      "type": "data",
-      "bom-ref": "rockyou",
-      "name": "SecLists RockYou wordlist archive",
-      "version": "source-snapshot",
-      "licenses": [
-        {
-          "expression": "MIT"
-        }
-      ],
-      "externalReferences": [
-        {
-          "type": "website",
-          "url": "https://github.com/danielmiessler/SecLists"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "47c070a029bcdb4cbd0e02c69fed136ef46dce4048ddbadf177daa5e885b8172"
-        }
-      ]
-    },
-    {
       "type": "library",
       "bom-ref": "requests",
       "name": "requests",
@@ -290,10 +267,6 @@
     },
     {
       "ref": "jwt_tool",
-      "dependsOn": []
-    },
-    {
-      "ref": "rockyou",
       "dependsOn": []
     },
     {

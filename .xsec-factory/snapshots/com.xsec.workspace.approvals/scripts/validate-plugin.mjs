@@ -8,8 +8,8 @@ import { frontendRequestMethods } from "./frontend-contract.mjs";
 
 const PLUGIN_ID = "com.xsec.workspace.approvals";
 const SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
-const PLUGIN_VERSION = "2.0.1";
-const EXTENSION_SCHEMA_VERSION = 2;
+const PLUGIN_VERSION = "2.1.0";
+const EXTENSION_SCHEMA_VERSION = 3;
 const BACKSLASH = "\\";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const PLUGIN_ROOT = resolve(process.argv[2] ?? ROOT);
@@ -98,7 +98,7 @@ function validateDesktopSchema(extension, schema) {
 }
 
 function validateHostOnlyBoundary(extension) {
-  if (extension.schemaVersion !== EXTENSION_SCHEMA_VERSION) fail("approvals must use the schema v2 Desktop extension");
+  if (extension.schemaVersion !== EXTENSION_SCHEMA_VERSION) fail("approvals must use the schema v3 Desktop extension");
   if (extension.contributes?.agentTools !== undefined) fail("approvals must not declare agentTools");
 }
 
@@ -148,7 +148,7 @@ function isContained(pathApi, candidate) {
 }
 
 function declaredEntrypoints(extension) {
-  const entrypoints = Object.entries(extension.entrypoints ?? {});
+  const entrypoints = Object.entries(extension.entrypoints ?? {}).filter(([kind]) => kind !== "native");
   const services = Object.entries(extension.contributes?.backgroundServices ?? {})
     .map(([id, service]) => [`background service ${id}`, service.entrypoint]);
   return [...entrypoints, ...services];
@@ -166,6 +166,8 @@ async function validateEntrypoint(kind, entrypoint) {
 }
 
 async function validateEntrypoints(extension) {
+  const native = extension.entrypoints?.native;
+  if (native !== undefined && native !== `builtin:${PLUGIN_ID}`) fail(`native entrypoint must be builtin:${PLUGIN_ID}`);
   for (const [kind, entrypoint] of declaredEntrypoints(extension)) await validateEntrypoint(kind, entrypoint);
 }
 

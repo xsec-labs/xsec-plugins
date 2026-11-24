@@ -2,6 +2,8 @@
 
 This signed package owns its manifest, permissions, release lifecycle, frontend UI state and interaction logic. XSEC Desktop loads `com.xsec.desktop/frontend/index.js` in the sandbox and exposes only the capability-checked Host RPC methods declared by `plugin.json`; bootstrap must never replace it with a compatibility renderer or placeholder.
 
+The root manifest declares a `com.xsec.desktop` schema v3 extension. `entrypoints.native` (`builtin:com.xsec.workspace.sub-agent`) selects the native UI compiled into XSEC Desktop; `entrypoints.frontend` stays as the WebView fallback.
+
 ## 设置审查
 
 子 Agent 当前没有账户级持久化配置，因此不创建空的插件设置页。运行列表、时间线、

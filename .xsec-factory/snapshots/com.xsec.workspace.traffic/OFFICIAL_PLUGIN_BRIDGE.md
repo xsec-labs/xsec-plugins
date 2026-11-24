@@ -7,7 +7,7 @@ source of truth.
 
 ## 运行边界
 
-- 包根清单使用 Agent Plugins v1 与 `com.xsec.desktop` schema v2。抓包流量目前是纯
+- 包根清单使用 Agent Plugins v1 与 `com.xsec.desktop` schema v3。抓包流量目前是纯
   Host 包：不声明 `agentTools`、`mcp.json` 或 portable Skill，所有前端方法仍经 Desktop
   capability 与会话绑定校验。
 - 插件源码在仓库 `src/`，构建结果是清单声明的单文件 ESM

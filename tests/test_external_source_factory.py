@@ -494,6 +494,41 @@ class ExternalSourceFactoryTests(unittest.TestCase):
                     with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "GitHub slug|below the checked-out|forward-slash"):
                         factory.load_registry(root)
 
+    def test_registry_releases_from_the_single_main_branch(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-external-single-branch-") as directory:
+            root = Path(directory)
+            single = self.registry_entry()
+            single["source"]["refs"] = {"beta": "refs/heads/main", "stable": "refs/heads/main"}
+            self.make_factory(root, single)
+            (registration,) = factory.load_registry(root)
+            self.assertEqual(registration.ref_for("beta"), "refs/heads/main")
+            self.assertEqual(registration.ref_for("stable"), "refs/heads/main")
+            # A registry written before the single-branch release still loads (trusted baseline).
+            self.make_factory(root, self.registry_entry())
+            (legacy,) = factory.load_registry(root)
+            self.assertEqual(legacy.ref_for("beta"), "refs/heads/beta")
+            for refs in (
+                {"beta": "refs/heads/main", "stable": "refs/heads/beta"},
+                {"beta": "refs/heads/release", "stable": "refs/heads/main"},
+            ):
+                with self.subTest(refs=refs):
+                    entry = self.registry_entry()
+                    entry["source"]["refs"] = refs
+                    self.make_factory(root, entry)
+                    with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "source.refs must map beta and stable"):
+                        factory.load_registry(root)
+
+    def test_status_recorded_from_the_legacy_beta_branch_stays_valid_until_the_next_publication(self) -> None:
+        # The registry moved to main, but status files are rewritten only by generated
+        # publications, so they may still record the legacy beta ref.
+        registrations = factory.load_registry(ROOT)
+        self.assertTrue(registrations)
+        for registration in registrations:
+            with self.subTest(plugin_id=registration.plugin_id):
+                factory.validate_status(
+                    ROOT, registration, require_publication_proofs=False, require_active_release_sidecar=False
+                )
+
     def test_registry_rejects_the_desktop_owned_plugin_namespace(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-external-reserved-plugin-") as directory:
             root = Path(directory)
@@ -1160,6 +1195,30 @@ class ExternalSourceFactoryTests(unittest.TestCase):
                 "cannot change its registered source identity",
             ):
                 factory.validate_registry_and_snapshots(root, baseline_root=baseline)
+
+    def test_trusted_baseline_allows_only_the_one_time_beta_to_main_ref_migration(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-external-baseline-ref-migration-") as directory:
+            workspace = Path(directory)
+            root = workspace / "current"
+            source = self.make_source(root / "source")
+            self.make_factory(root, self.registry_entry())
+            self.stage_and_record_beta(root, source)
+            baseline = workspace / "trusted-baseline"
+            shutil.copytree(root, baseline)
+
+            migrated = self.registry_entry()
+            migrated["source"]["refs"] = {"beta": "refs/heads/main", "stable": "refs/heads/main"}
+            write_json(root / ".xsec-factory" / "official-registry.json", {"schemaVersion": 2, "plugins": [migrated]})
+            # The recorded history still names refs/heads/beta, which stays readable.
+            factory.validate_registry_and_snapshots(root, baseline_root=baseline)
+
+            # The reverse direction (a baseline that already moved to main going back to beta) is an identity rewrite.
+            moved_back = workspace / "moved-back-baseline"
+            shutil.copytree(root, moved_back)
+            write_json(moved_back / ".xsec-factory" / "official-registry.json", {"schemaVersion": 2, "plugins": [migrated]})
+            write_json(root / ".xsec-factory" / "official-registry.json", {"schemaVersion": 2, "plugins": [self.registry_entry()]})
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "cannot change its registered source identity"):
+                factory.validate_registry_and_snapshots(root, baseline_root=moved_back)
 
     def test_trusted_baseline_requires_published_external_release_history_to_remain_in_order(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-external-baseline-release-order-") as directory:

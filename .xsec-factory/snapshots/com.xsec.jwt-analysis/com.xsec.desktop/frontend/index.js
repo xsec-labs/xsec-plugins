@@ -107,7 +107,7 @@ async function renderWorkspace(host, root, context, signal) {
   const subtitle = element("p", `项目任务 · ${context?.project?.projectId || "当前项目"}`);
   const diagnostics = await host.request("xsec.jwt-analysis.diagnostics", {});
   if (signal.aborted) return;
-  const runtime = element("p", `Sidecar ${diagnostics.sidecar} · jwt_tool ${diagnostics.jwt_tool_version} · RockYou ${diagnostics.rockyou_available ? "已就绪" : "缺失"}`);
+  const runtime = element("p", `Sidecar ${diagnostics.sidecar} · jwt_tool ${diagnostics.jwt_tool_version}`);
   const jobSelect = element("select");
   const content = element("div", undefined, "jwt-content"), reportView = element("div");
   const refreshButton = element("button", "刷新"), reportButton = element("button", "报告预览 / 下载");
@@ -219,9 +219,8 @@ async function renderSettings(host, root, signal) {
   const settings = current?.value || {};
   const form = element("form", undefined, "jwt-settings");
   const title = element("h1", "JWT 分析设置");
-  const note = element("p", "设置保存在当前账号。自定义字典需为本机可读的 UTF-8 文本文件。全量 RockYou 保持压缩并逐行读取；运行状态在项目 JWT 分析面板显示。", "jwt-note");
+  const note = element("p", "设置保存在当前账号。RockYou 不随插件提供，请把自备的文本或只含一个文件的 .tar.gz 字典路径填在下方；无效 UTF-8 行会被跳过并计数。运行状态在项目 JWT 分析面板显示。", "jwt-note");
   const common = checkbox("启用 jwt-common 字典", settings.wordlists?.includes("jwt-common") ?? true);
-  const rockyou = checkbox("启用 RockYou 字典", settings.rockyou_enabled ?? true);
   const customPaths = input("自定义字典路径，每行一个", "textarea", (settings.custom_wordlists || []).join("\n"));
   const rate = input("主动请求速率（每分钟）", "number", settings.rate_limit ?? 10);
   const timeout = input("请求超时（秒）", "number", settings.request_timeout_seconds ?? 10);
@@ -235,15 +234,14 @@ async function renderSettings(host, root, signal) {
   const publicKey = input("RS/HS 混淆测试公钥（PEM，可选）", "textarea", settings.public_key || "");
   const save = element("button", "保存设置");
   save.type = "submit";
-  form.append(title, note, common.label, rockyou.label, customPaths.label, rate.label,
+  form.append(title, note, common.label, customPaths.label, rate.label,
               timeout.label, concurrency.label, requestCount.label, redirect.label, tls.label, redaction.label, publicKey.label, save);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const wordlists = [common.input.checked ? "jwt-common" : null,
-                       rockyou.input.checked ? "rockyou" : null,
                        customPaths.input.value.trim() ? "custom" : null].filter(Boolean);
     const value = {
-      ...settings, wordlists, rockyou_enabled: rockyou.input.checked,
+      ...settings, wordlists,
       custom_wordlists: customPaths.input.value.split("\n").map((path) => path.trim()).filter(Boolean),
       rate_limit: boundedInput(rate.input, 1, 60),
       request_timeout_seconds: boundedInput(timeout.input, 1, 60),
