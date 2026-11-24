@@ -1,0 +1,218 @@
+name: Release plugins from main
+
+# Every plugin releases from the `main` branch of its own repository. A plugin
+# repository reports each new main commit by dispatching this workflow (its
+# token can only run workflows in this repository); a daily run and a manual run
+# catch anything that report missed. All three do the same thing: plan which
+# registered plugins have an unpublished version on main, then publish them one
+# at a time through publish.yml and wait for each publication to merge before
+# starting the next. The inputs of a dispatch only name what woke the run: the
+# plan always re-reads every plugin's current main head, so a burst of
+# notifications (GitHub keeps one pending run per concurrency group) loses
+# nothing.
+run-name: >-
+  ${{ inputs.source_repository
+      && format('Release plugins: {0}', inputs.source_repository)
+      || format('Release plugins ({0})', github.event_name) }}
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      plugin_id:
+        description: Release only this registered plugin. Leave empty to release every pending plugin.
+        required: false
+        type: string
+      source_repository:
+        description: Plugin repository that reported a new main commit (informational; the plan re-reads every head).
+        required: false
+        type: string
+      source_sha:
+        description: Commit that repository reported (informational).
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: xsec-plugin-release-sync
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLUGIN_ID: ${{ inputs.plugin_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Plan the plugins that have an unpublished version on main
+        id: plan
+        run: |
+          set -euo pipefail
+          args=(--root .)
+          if [ -n "$PLUGIN_ID" ]; then
+            [[ "$PLUGIN_ID" =~ ^[a-z0-9]([a-z0-9.-]{0,62}[a-z0-9])?$ ]] || { echo "plugin_id is unsafe." >&2; exit 1; }
+            args+=(--plugin-id "$PLUGIN_ID")
+          fi
+          python scripts/release_plugins.py "${args[@]}" > "$RUNNER_TEMP/release-plan.json"
+          {
+            echo "### Release plan"
+            echo
+            jq -r '.pending[] | "- release \(.pluginId) \(.version) @ \(.sha[0:12])"' "$RUNNER_TEMP/release-plan.json"
+            jq -r '.skipped[] | "- skip \(.pluginId): \(.reason)"' "$RUNNER_TEMP/release-plan.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "pending=$(jq -r '.pending | length' "$RUNNER_TEMP/release-plan.json")" >> "$GITHUB_OUTPUT"
+      - name: Require the dedicated read-only Desktop source App
+        if: ${{ steps.plan.outputs.pending != '0' }}
+        env:
+          APP_ID: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
+          APP_KEY: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY }}
+        run: |
+          [[ "$APP_ID" =~ ^[1-9][0-9]*$ ]] || { echo "XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID is not configured." >&2; exit 1; }
+          [ -n "$APP_KEY" ] || { echo "XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY is not configured." >&2; exit 1; }
+      - name: Create a read-only Desktop source token
+        id: desktop-token
+        if: ${{ steps.plan.outputs.pending != '0' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_ID }}
+          private-key: ${{ secrets.XSEC_DESKTOP_SIDECAR_SOURCE_APP_PRIVATE_KEY }}
+          owner: xsec-labs
+          repositories: xSecDesktop
+          permission-contents: read
+      - name: Publish each pending plugin, one at a time
+        if: ${{ steps.plan.outputs.pending != '0' }}
+        env:
+          DESKTOP_TOKEN: ${{ steps.desktop-token.outputs.token }}
+        run: |
+          set -uo pipefail
+          plan="$RUNNER_TEMP/release-plan.json"
+          failures=()
+
+          open_factory_prs() {
+            gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&per_page=100" \
+              | jq -r '[.[][] | select(.head.ref | startswith("xsec-marketplace/"))] | length'
+          }
+
+          # A generated Marketplace PR still in flight must merge (or be closed)
+          # before another publication signs: publish.yml refuses to run beside it.
+          wait_for_idle_factory() {
+            local waited=0
+            while [ "$(open_factory_prs)" != "0" ]; do
+              [ "$waited" -lt 3600 ] || return 1
+              sleep 60
+              waited=$((waited + 60))
+            done
+          }
+
+          published_sha() {
+            gh api -H 'Accept: application/vnd.github.raw' \
+              "repos/${GITHUB_REPOSITORY}/contents/.xsec-factory/official-status/${1}.json?ref=main" 2>/dev/null \
+              | jq -r '.source.betaSha // empty'
+          }
+
+          # The run is found by its run-name, which publish.yml derives from its inputs.
+          # Only runs created after the dispatch (a larger run id than any seen
+          # before it) count, so an earlier failed attempt can never be mistaken
+          # for the new one.
+          latest_publish_run_id() {
+            gh run list --workflow publish.yml --event workflow_dispatch --json databaseId --limit 1 \
+              | jq -r '.[0].databaseId // 0'
+          }
+
+          find_run() {
+            local id="$1" short="$2" after="$3" run=""
+            for _ in $(seq 1 20); do
+              run="$(gh run list --workflow publish.yml --event workflow_dispatch \
+                --json databaseId,displayTitle --limit 50 \
+                | jq -r --arg id "$id" --arg sha "$short" --argjson after "$after" \
+                  '[.[] | select(.databaseId > $after and (.displayTitle | contains($id)) and (.displayTitle | contains($sha)))][0].databaseId // empty')"
+              [ -z "$run" ] || { echo "$run"; return 0; }
+              sleep 15
+            done
+            return 1
+          }
+
+          # No dispatched publication may still be queued or running before another
+          # one starts: they share one publication slot and GitHub keeps one pending run.
+          wait_for_publish_idle() {
+            local waited=0
+            while [ "$(gh run list --workflow publish.yml --event workflow_dispatch --json status \
+              --jq '[.[] | select(.status != "completed")] | length')" != "0" ]; do
+              [ "$waited" -lt 14400 ] || return 1
+              sleep 60
+              waited=$((waited + 60))
+            done
+          }
+
+          publish_once() {
+            local id="$1" sha="$2" short="${2:0:12}" before desktop_sha run conclusion waited
+            desktop_sha="$(GH_TOKEN="$DESKTOP_TOKEN" gh api repos/xsec-labs/xSecDesktop/commits/main --jq .sha)"
+            [[ "$desktop_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Desktop main did not resolve to a commit." >&2; return 1; }
+            before="$(latest_publish_run_id)"
+            gh workflow run publish.yml --ref main \
+              -f maintenance=release -f plugin_id="$id" -f source_sha="$sha" -f native_sidecars_source_sha="$desktop_sha" || return 1
+            run="$(find_run "$id" "$short" "$before")" || { echo "publish.yml run for $id did not appear." >&2; return 1; }
+            echo "publish.yml run $run for $id @ $short"
+            waited=0
+            while :; do
+              conclusion="$(gh run view "$run" --json status,conclusion --jq 'if .status == "completed" then .conclusion else "" end')"
+              [ -z "$conclusion" ] || break
+              sleep 30
+              waited=$((waited + 30))
+              [ "$waited" -lt 19800 ] || { echo "publish.yml run $run did not finish in time." >&2; return 1; }
+            done
+            [ "$conclusion" = "success" ] || { echo "publish.yml run $run concluded $conclusion." >&2; return 1; }
+            # The signed PR merges asynchronously through the finalizer chain; the next
+            # plugin may start only after this one is on main (or its PR is gone).
+            waited=0
+            local idle=0
+            while [ "$(published_sha "$id")" != "$sha" ]; do
+              if [ "$(open_factory_prs)" = "0" ]; then
+                idle=$((idle + 1))
+                [ "$idle" -lt 4 ] || { echo "$id left no pending publication and is not on main." >&2; return 1; }
+              else
+                idle=0
+              fi
+              waited=$((waited + 30))
+              [ "$waited" -lt 5400 ] || { echo "$id did not reach main in time." >&2; return 1; }
+              sleep 30
+            done
+            echo "$id is published from $short."
+          }
+
+          while IFS=$'\t' read -r id sha version; do
+            echo "::group::Release $id $version"
+            ok=false
+            for attempt in 1 2; do
+              if wait_for_publish_idle && wait_for_idle_factory && publish_once "$id" "$sha"; then ok=true; break; fi
+              echo "Attempt $attempt for $id failed."
+            done
+            echo "::endgroup::"
+            if [ "$ok" = true ]; then
+              echo "- released $id $version" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- FAILED $id $version" >> "$GITHUB_STEP_SUMMARY"
+              failures+=("$id")
+            fi
+          done < <(jq -r '.pending[] | [.pluginId, .sha, .version] | @tsv' "$plan")
+
+          if [ "${#failures[@]}" -gt 0 ]; then
+            echo "Release failed for: ${failures[*]}" >&2
+            exit 1
+          fi
