@@ -103,6 +103,42 @@ class FactoryFinalCandidateGateWorkflowTests(unittest.TestCase):
         self.assertIn("Require source-gated automatic finalization", workflow)
         self.assertIn("require_current_review_state() {\n            :", workflow)
 
+    def test_release_pr_is_smoked_on_desktop_before_it_can_merge(self) -> None:
+        workflow = FINAL_WORKFLOW.read_text(encoding="utf-8")
+        selected = SELECTED_FINALIZER_WORKFLOW.read_text(encoding="utf-8")
+        smoke = workflow.index("Smoke the exact release head on every Desktop platform before merging")
+        recheck = workflow.index("Require the smoked head and main to be unchanged")
+        merge = workflow.index("Merge the exact revalidated head with the isolated Finalizer App")
+        # The smoke and its recheck precede the Finalizer token and the merge:
+        # a merged release is visible to every Desktop at once.
+        self.assertLess(smoke, recheck)
+        # The Source App installation token lasts an hour and the smoke can
+        # take three: the smoke and its recheck come before the token exists.
+        source_token = workflow.index("Create a narrowly scoped read-only Source App token")
+        self.assertLess(recheck, source_token)
+        self.assertLess(workflow.index("Require a current source gate"), smoke)
+        # The run is looked up by the candidate receiver's own workflow file.
+        self.assertIn("actions/workflows/official-marketplace-candidate-smoke.yml/runs", workflow)
+        self.assertNotIn("actions/workflows/official-marketplace-smoke.yml/runs", workflow)
+        self.assertLess(recheck, merge)
+        self.assertLess(workflow.index("Create a repository-scoped Finalizer App token"), merge)
+        self.assertLess(recheck, workflow.index("Create a repository-scoped Finalizer App token"))
+        step = workflow[smoke:recheck]
+        self.assertIn("event_type:\"xsec_official_marketplace_candidate\"", step)
+        self.assertIn("candidate_branch:$branch", step)
+        self.assertIn("XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN", step)
+        self.assertIn('[ "$waited" -lt 10800 ]', step)
+        # Only a smoke that ran and failed closes the PR; every other outcome
+        # leaves it open for a later trigger.
+        self.assertIn("failure) reject_release", step)
+        self.assertIn('*) echo "The Desktop smoke concluded ${conclusion}', step)
+        for branch in ("external-version-", "publish-"):
+            self.assertIn(f"startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/{branch}')", step + workflow[recheck:merge])
+        self.assertNotIn("default-set-", step)
+        # Closing the PR needs write access in the reusable workflow and its caller.
+        self.assertIn("pull-requests: write", workflow.split("jobs:", 1)[0])
+        self.assertIn("pull-requests: write", selected.split("jobs:", 1)[0])
+
     def test_every_generated_candidate_skips_bot_review_requests(self) -> None:
         workflows = (
             "publish.yml",

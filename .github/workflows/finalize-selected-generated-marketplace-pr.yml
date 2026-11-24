@@ -9,7 +9,8 @@ permissions:
   actions: read
   checks: read
   contents: read
-  pull-requests: read
+  # A failed Desktop smoke closes the release PR with a comment.
+  pull-requests: write
 
 concurrency:
   group: xsec-marketplace-final-selector-main

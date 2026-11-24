@@ -17,7 +17,7 @@ on:
 permissions:
   actions: read
   contents: read
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: xsec-marketplace-final-merge-main
@@ -245,6 +245,110 @@ jobs:
           echo "source_app_required=$(printf '%s' "$source_scope" | jq -er .required)" >> "$GITHUB_OUTPUT"
           echo "source_owner=$(printf '%s' "$source_scope" | jq -er .owner)" >> "$GITHUB_OUTPUT"
           echo "source_repositories=$(printf '%s' "$source_scope" | jq -er .repositories)" >> "$GITHUB_OUTPUT"
+      - name: Require a current source gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # The source gate is the PR validation for this immutable candidate
+          # head. A manually-dispatched validation is not the PR gate.
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/validate.yml/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=100")"
+          printf '%s' "$runs" | jq -e --argjson pull_number "$PULL_NUMBER" '
+            any(.workflow_runs[];
+              .status == "completed"
+              and .conclusion == "success"
+              and any(.pull_requests[]?; .number == $pull_number)
+            )
+          ' >/dev/null || {
+            echo "The exact PR head has no successful Factory source gate." >&2
+            exit 1
+          }
+      # The smoke can outlast the one-hour Source App installation token, so it
+      # runs before that token is created; the source branches are proven right
+      # after it.
+      # A release is published only after the exact PR head has passed the
+      # four-platform Desktop smoke. The smoke runs before the merge: once the
+      # PR is merged, Desktop users can install it. A failed smoke closes the PR
+      # with a comment, so nothing is published and the same head is not
+      # smoked again by a later finalizer trigger.
+      - name: Smoke the exact release head on every Desktop platform before merging
+        if: ${{ steps.pr.outputs.head_ref != '' && (startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/external-version-') || startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/external-beta-') || startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/publish-') || startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/batch-')) }}
+        env:
+          GH_TOKEN: ${{ secrets.XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN }}
+          REPO_TOKEN: ${{ github.token }}
+          PULL_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          [ -n "$GH_TOKEN" ] || {
+            echo "The protected Desktop smoke token is required before a release can merge." >&2
+            exit 1
+          }
+          # Only a smoke that ran and failed closes the PR. A problem reaching or
+          # reading the Desktop run leaves the PR open so a later trigger can retry.
+          reject_release() {
+            echo "$1" >&2
+            GH_TOKEN="$REPO_TOKEN" gh pr comment "$PULL_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "Desktop smoke did not pass for \`${HEAD_SHA}\`: $1 Nothing was published; this PR is closed." || true
+            GH_TOKEN="$REPO_TOKEN" gh pr close "$PULL_NUMBER" --repo "$GITHUB_REPOSITORY" || true
+            exit 1
+          }
+          since="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)"
+          payload="$(jq -cn --arg revision "$HEAD_SHA" --arg branch "$HEAD_REF" --arg repository "$GITHUB_REPOSITORY" \
+            '{event_type:"xsec_official_marketplace_candidate",client_payload:{source_repository:$repository,marketplace_revision:$revision,candidate_branch:$branch,channel:"beta"}}')"
+          printf '%s' "$payload" | gh api --method POST repos/xsec-labs/xSecDesktop/dispatches --input - >/dev/null
+          # The Desktop run names itself after the revision it verifies.
+          run_id=""
+          for _ in $(seq 1 40); do
+            run_id="$(gh api "repos/xsec-labs/xSecDesktop/actions/workflows/official-marketplace-candidate-smoke.yml/runs?event=repository_dispatch&per_page=50" \
+              | jq -r --arg sha "$HEAD_SHA" --arg since "$since" \
+                '[.workflow_runs[] | select((.display_title | contains($sha)) and .created_at >= $since)][0].id // empty')"
+            [ -z "$run_id" ] || break
+            sleep 15
+          done
+          [ -n "$run_id" ] || { echo "The Desktop smoke run did not start; the release stays pending." >&2; exit 1; }
+          echo "Desktop smoke run: https://github.com/xsec-labs/xSecDesktop/actions/runs/${run_id}"
+          waited=0
+          while :; do
+            run="$(gh api "repos/xsec-labs/xSecDesktop/actions/runs/${run_id}")"
+            if [ "$(printf '%s' "$run" | jq -r .status)" = "completed" ]; then
+              conclusion="$(printf '%s' "$run" | jq -r .conclusion)"
+              break
+            fi
+            sleep 60
+            waited=$((waited + 60))
+            [ "$waited" -lt 10800 ] || { echo "The Desktop smoke did not finish in three hours; the release stays pending." >&2; exit 1; }
+          done
+          case "$conclusion" in
+            success) ;;
+            failure) reject_release "the Desktop smoke failed (https://github.com/xsec-labs/xSecDesktop/actions/runs/${run_id})." ;;
+            # Cancelled, timed out or skipped says nothing about the release itself.
+            *) echo "The Desktop smoke concluded ${conclusion} (https://github.com/xsec-labs/xSecDesktop/actions/runs/${run_id}); the release stays pending." >&2; exit 1 ;;
+          esac
+          echo "Desktop smoke passed on all four platforms for ${HEAD_SHA}."
+      # The smoke can take hours. Merge only what it verified: the same PR head
+      # on the same main. Anything else stays pending for a new publication.
+      - name: Require the smoked head and main to be unchanged
+        if: ${{ steps.pr.outputs.head_ref != '' && (startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/external-version-') || startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/external-beta-') || startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/publish-') || startsWith(steps.pr.outputs.head_ref, 'xsec-marketplace/batch-')) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          live="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PULL_NUMBER}")"
+          [ "$(printf '%s' "$live" | jq -r .state)" = "open" ] && [ "$(printf '%s' "$live" | jq -r .head.sha)" = "$HEAD_SHA" ] || {
+            echo "The PR was closed or its head moved while the Desktop smoke ran; it remains pending." >&2
+            exit 1
+          }
+          [ "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)" = "$BASE_SHA" ] || {
+            echo "Main advanced while the Desktop smoke ran; the release needs a new publication on the new main." >&2
+            exit 1
+          }
       - name: Require the read-only Source App credentials for registered source proofs
         if: ${{ steps.publication.outputs.source_app_required == 'true' }}
         env:
@@ -298,26 +402,6 @@ jobs:
             }
           done < <(jq -rc '.[]' "$RUNNER_TEMP/factory-publication-sources.json")
           unset token_header
-      - name: Require a current source gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PULL_NUMBER: ${{ steps.pr.outputs.number }}
-          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
-        run: |
-          set -euo pipefail
-          # The source gate is the PR validation for this immutable candidate
-          # head. A manually-dispatched validation is not the PR gate.
-          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/validate.yml/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=100")"
-          printf '%s' "$runs" | jq -e --argjson pull_number "$PULL_NUMBER" '
-            any(.workflow_runs[];
-              .status == "completed"
-              and .conclusion == "success"
-              and any(.pull_requests[]?; .number == $pull_number)
-            )
-          ' >/dev/null || {
-            echo "The exact PR head has no successful Factory source gate." >&2
-            exit 1
-          }
       - name: Require source-gated automatic finalization
         env:
           GH_TOKEN: ${{ github.token }}
