@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-binary-analysis",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/main",
+      "beta": "refs/heads/beta",
       "stable": "refs/heads/main"
     },
     "betaSha": "2fe3366d8e38577801338422c5b928f4ad31cb45",

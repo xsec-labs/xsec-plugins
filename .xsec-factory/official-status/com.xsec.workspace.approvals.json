@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-approvals",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/main",
+      "beta": "refs/heads/beta",
       "stable": "refs/heads/main"
     },
     "betaSha": "4587656ddf651e25b7f803d694ad6e1ad7c79fa1",

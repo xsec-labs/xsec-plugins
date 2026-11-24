@@ -518,6 +518,17 @@ class ExternalSourceFactoryTests(unittest.TestCase):
                     with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "source.refs must map beta and stable"):
                         factory.load_registry(root)
 
+    def test_status_recorded_from_the_legacy_beta_branch_stays_valid_until_the_next_publication(self) -> None:
+        # The registry moved to main, but status files are rewritten only by generated
+        # publications, so they may still record the legacy beta ref.
+        registrations = factory.load_registry(ROOT)
+        self.assertTrue(registrations)
+        for registration in registrations:
+            with self.subTest(plugin_id=registration.plugin_id):
+                factory.validate_status(
+                    ROOT, registration, require_publication_proofs=False, require_active_release_sidecar=False
+                )
+
     def test_registry_rejects_the_desktop_owned_plugin_namespace(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-external-reserved-plugin-") as directory:
             root = Path(directory)

@@ -2467,7 +2467,7 @@ def complete_smoke_status(
     if (
         source.get("repository") != registration.repository
         or not source_path_matches_history(registration, source.get("path"))
-        or refs.get("beta") != registration.beta_ref
+        or refs.get("beta") not in {registration.beta_ref, LEGACY_BETA_REF}
         or refs.get("stable") != registration.stable_ref
     ):
         fail("completed smoke status source does not match the official registry")
@@ -2559,7 +2559,7 @@ def validate_status(
     )
     refs = require_object(source.get("refs"), "official Factory status source.refs")
     require_exact_keys(refs, {"beta", "stable"}, "official Factory status source.refs")
-    if source.get("repository") != registration.repository or not source_path_matches_history(registration, source.get("path")) or refs.get("beta") != registration.beta_ref or refs.get("stable") != registration.stable_ref:
+    if source.get("repository") != registration.repository or not source_path_matches_history(registration, source.get("path")) or refs.get("beta") not in {registration.beta_ref, LEGACY_BETA_REF} or refs.get("stable") != registration.stable_ref:
         fail("official Factory status source does not match the official registry")
     beta_sha = optional_sha(source.get("betaSha"), "official Factory status betaSha")
     stable_sha = optional_sha(source.get("stableSha"), "official Factory status stableSha")

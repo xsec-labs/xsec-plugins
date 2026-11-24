@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-browser",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/main",
+      "beta": "refs/heads/beta",
       "stable": "refs/heads/main"
     },
     "betaSha": "04eba1704ee5886f4742060fb9002b748b4f23ac",

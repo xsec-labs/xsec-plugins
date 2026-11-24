@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-system-terminal",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/main",
+      "beta": "refs/heads/beta",
       "stable": "refs/heads/main"
     },
     "betaSha": "4d70dd353959ed062362d749e7a88a74f068e9ed",

@@ -6,7 +6,7 @@
     "repository": "xsec-labs/xsec-plugin-traffic",
     "path": ".",
     "refs": {
-      "beta": "refs/heads/main",
+      "beta": "refs/heads/beta",
       "stable": "refs/heads/main"
     },
     "betaSha": "6dd95472b8e6a0248de87f5ef2740a844eb37734",
