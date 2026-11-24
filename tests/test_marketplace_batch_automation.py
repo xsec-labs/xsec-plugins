@@ -76,6 +76,8 @@ class MarketplaceBatchAutomationTests(unittest.TestCase):
             "xsec-retained-native-beta",
             "does not reproduce its retained Beta; requiring current protected sidecars.",
             ".inputs | fromjson | .[]",
+            ".runtimes | fromjson | if type == \"array\" then . else error(\"retained packed runtimes are not an array\") end",
+            "Retained Beta packed runtime is unavailable for $native_plugin@$rust_target.",
             "$native_plugin@$target=$binary",
             "git status --porcelain --untracked-files=all",
             "--allow-unsigned-active-release-sidecars",
@@ -89,6 +91,10 @@ class MarketplaceBatchAutomationTests(unittest.TestCase):
         ):
             with self.subTest(rule=rule):
                 self.assertIn(rule, publisher)
+        # binary-analysis and jwt-analysis reconcile like every other native
+        # plugin: a forced rebuild of an unmoved retained Beta cannot reproduce
+        # its digests, and the whole batch fails on the preflight.
+        self.assertNotIn('[ "$native_plugin" = "com.xsec.binary-analysis" ] || [ "$native_plugin" = "com.xsec.jwt-analysis" ]', publisher)
         self.assertNotIn("permission-checks: read", publisher)
         self.assertNotIn("branches/main --jq .protected", publisher)
         self.assertNotIn("Desktop main must remain protected", publisher)
