@@ -112,6 +112,14 @@ class FactoryFinalCandidateGateWorkflowTests(unittest.TestCase):
         # The smoke and its recheck precede the Finalizer token and the merge:
         # a merged release is visible to every Desktop at once.
         self.assertLess(smoke, recheck)
+        # The Source App installation token lasts an hour and the smoke can
+        # take three: the smoke and its recheck come before the token exists.
+        source_token = workflow.index("Create a narrowly scoped read-only Source App token")
+        self.assertLess(recheck, source_token)
+        self.assertLess(workflow.index("Require a current source gate"), smoke)
+        # The run is looked up by the candidate receiver's own workflow file.
+        self.assertIn("actions/workflows/official-marketplace-candidate-smoke.yml/runs", workflow)
+        self.assertNotIn("actions/workflows/official-marketplace-smoke.yml/runs", workflow)
         self.assertLess(recheck, merge)
         self.assertLess(workflow.index("Create a repository-scoped Finalizer App token"), merge)
         self.assertLess(recheck, workflow.index("Create a repository-scoped Finalizer App token"))
