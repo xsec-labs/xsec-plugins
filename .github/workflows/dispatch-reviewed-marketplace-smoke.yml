@@ -207,7 +207,7 @@ jobs:
                   and .pluginId == $plugin_id
                   and .trustTier == "first-party"
                   and .source.repository == $repository
-                  and .source.refs == {beta:"refs/heads/beta",stable:"refs/heads/main"}
+                  and .source.refs == {beta:"refs/heads/main",stable:"refs/heads/main"}
                   and .source.stableSha == $stable_sha
                   and .release.betaReleaseId == $release_id
                   and .release.stableReleaseId == $release_id

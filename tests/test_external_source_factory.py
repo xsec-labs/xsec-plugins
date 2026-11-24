@@ -1185,6 +1185,30 @@ class ExternalSourceFactoryTests(unittest.TestCase):
             ):
                 factory.validate_registry_and_snapshots(root, baseline_root=baseline)
 
+    def test_trusted_baseline_allows_only_the_one_time_beta_to_main_ref_migration(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="xsec-external-baseline-ref-migration-") as directory:
+            workspace = Path(directory)
+            root = workspace / "current"
+            source = self.make_source(root / "source")
+            self.make_factory(root, self.registry_entry())
+            self.stage_and_record_beta(root, source)
+            baseline = workspace / "trusted-baseline"
+            shutil.copytree(root, baseline)
+
+            migrated = self.registry_entry()
+            migrated["source"]["refs"] = {"beta": "refs/heads/main", "stable": "refs/heads/main"}
+            write_json(root / ".xsec-factory" / "official-registry.json", {"schemaVersion": 2, "plugins": [migrated]})
+            # The recorded history still names refs/heads/beta, which stays readable.
+            factory.validate_registry_and_snapshots(root, baseline_root=baseline)
+
+            # The reverse direction (a baseline that already moved to main going back to beta) is an identity rewrite.
+            moved_back = workspace / "moved-back-baseline"
+            shutil.copytree(root, moved_back)
+            write_json(moved_back / ".xsec-factory" / "official-registry.json", {"schemaVersion": 2, "plugins": [migrated]})
+            write_json(root / ".xsec-factory" / "official-registry.json", {"schemaVersion": 2, "plugins": [self.registry_entry()]})
+            with self.assertRaisesRegex(factory.ExternalSourceFactoryError, "cannot change its registered source identity"):
+                factory.validate_registry_and_snapshots(root, baseline_root=moved_back)
+
     def test_trusted_baseline_requires_published_external_release_history_to_remain_in_order(self) -> None:
         with tempfile.TemporaryDirectory(prefix="xsec-external-baseline-release-order-") as directory:
             workspace = Path(directory)

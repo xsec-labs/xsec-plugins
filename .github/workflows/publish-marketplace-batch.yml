@@ -83,7 +83,7 @@ jobs:
           GH_TOKEN: ${{ steps.binary-source-token.outputs.token }}
         run: |
           set -euo pipefail
-          source_sha="$(gh api repos/xsec-labs/xsec-plugin-binary-analysis/git/ref/heads/beta --jq .object.sha)"
+          source_sha="$(gh api repos/xsec-labs/xsec-plugin-binary-analysis/git/ref/heads/main --jq .object.sha)"
           [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Binary-analysis Beta did not resolve to a canonical commit SHA." >&2; exit 1; }
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - name: Resolve the current jwt-analysis Beta revision
@@ -92,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ steps.binary-source-token.outputs.token }}
         run: |
           set -euo pipefail
-          source_sha="$(gh api repos/xsec-labs/xsec-plugin-jwt-analysis/git/ref/heads/beta --jq .object.sha)"
+          source_sha="$(gh api repos/xsec-labs/xsec-plugin-jwt-analysis/git/ref/heads/main --jq .object.sha)"
           [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "JWT-analysis Beta did not resolve to a canonical commit SHA." >&2; exit 1; }
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
   build-native-sidecars:
@@ -476,7 +476,7 @@ jobs:
             ]
             | if length == 12
                 and all(.[]; (.plugin_id | type == "string") and (.repository | type == "string")
-                  and .beta_ref == "refs/heads/beta" and .stable_ref == "refs/heads/main")
+                  and .beta_ref == "refs/heads/main" and .stable_ref == "refs/heads/main")
               then sort_by(.plugin_id)
               else error("Factory must have exactly twelve active plugin sources") end
           ' .xsec-factory/official-registry.json)"
