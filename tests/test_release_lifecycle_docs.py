@@ -55,6 +55,66 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn("Marketplace KMS/JWS 发布链已于 2026-09-20 退役", document)
         self.assertIn("Marketplace KMS/JWS signing was retired on 2026-09-20", readme)
 
+    def test_duplicate_beta_delivery_never_publishes_a_second_time(self) -> None:
+        workflow = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("A duplicate source delivery", workflow)
+        self.assertNotIn("XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN", workflow)
+
+    def test_current_publication_policy_and_legacy_status_verifier_are_documented(self) -> None:
+        readme = README.read_text(encoding="utf-8")
+        publisher = (ROOT / "scripts" / "kms_marketplace_publisher.py").read_text(encoding="utf-8")
+        verifier = (ROOT / "scripts" / "verify_merged_stable_promotion.py").read_text(encoding="utf-8")
+        for required_rule in (
+            "Each SemVer identifies one immutable release",
+            "Official and external\nplugins use the same permission-confirmation model",
+            "Plugins must support Windows, macOS and Linux",
+            "updates and publication do not require cross-platform Desktop Host\nSmoke by default",
+            "Desktop installer/updater and Managed Skill signing",
+        ):
+            with self.subTest(readme_rule=required_rule):
+                self.assertIn(required_rule, readme)
+        self.assertIn("OFFICIAL_STATUS_PURPOSE", publisher)
+        self.assertIn("OFFICIAL_STATUS_PROOFS_RELATIVE_PATH", publisher)
+        self.assertIn("STATUS_PROOF_PATTERN", verifier)
+        self.assertIn("status KMS proof", verifier)
+
+    def test_merge_guard_revalidates_fresh_sources_at_the_merge_boundary(self) -> None:
+        merge_guard = MERGE_GUARD_WORKFLOW.read_text(encoding="utf-8")
+        publisher = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("merge_group:", merge_guard)
+        self.assertEqual(
+            merge_guard.count('git diff --quiet "$BEFORE" "$AFTER" -- .agents/plugins .xsec-factory plugins .gitmodules'),
+            2,
+        )
+        self.assertIn("Registered ${repository} ${ref} advanced", merge_guard)
+        self.assertIn("Refuse to sign while this plugin has a generated Factory PR awaiting final merge", publisher)
+        self.assertNotIn("github.event.head_commit.message", publisher)
+
+    def test_final_merge_source_proofs_use_the_separate_reader_app(self) -> None:
+        final_merge = FINAL_MERGE_WORKFLOW.read_text(encoding="utf-8")
+        untrusted_pr_gate = MERGE_GUARD_WORKFLOW.read_text(encoding="utf-8")
+        header = (
+            '-c http.https://github.com/.extraheader= \\\n'
+            '              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header"'
+        )
+
+        self.assertIn("XSEC_MARKETPLACE_SOURCE_APP_ID", final_merge)
+        self.assertIn("XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY", final_merge)
+        self.assertIn("Create a narrowly scoped read-only Source App token", final_merge)
+        self.assertIn("permission-contents: read", final_merge)
+        self.assertIn("GIT_TERMINAL_PROMPT=0", final_merge)
+        self.assertIn(header, final_merge)
+        self.assertIn('http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header', final_merge)
+        self.assertEqual(final_merge.count(header), 3)
+        self.assertIn("SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}", final_merge)
+        # A pull_request runner executes the candidate workflow definition,
+        # so it must not receive the protected Source App key. It can report
+        # an authenticated public head early, but private access is deferred
+        # to the production-gated final workflow above.
+        self.assertNotIn("XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY", untrusted_pr_gate)
+        self.assertIn("defer private-source proof to the final gate", untrusted_pr_gate)
+        self.assertIn(')" || actual_sha=""', untrusted_pr_gate)
+
     def test_final_merge_gate_is_trusted_revalidating_and_does_not_deadlock_normal_prs(self) -> None:
         arm = ARM_FINAL_GATE_WORKFLOW.read_text(encoding="utf-8")
         final_merge = FINAL_MERGE_WORKFLOW.read_text(encoding="utf-8")

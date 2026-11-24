@@ -201,6 +201,34 @@ class FactoryFinalCandidateGateWorkflowTests(unittest.TestCase):
         self.assertIn("permission-contents: read", source_token)
         self.assertNotIn("permission-contents: write", source_token)
 
+    def test_beta_source_gate_rechecks_both_registered_branch_heads(self) -> None:
+        workflow = FINAL_WORKFLOW.read_text(encoding="utf-8")
+        freshness = (ROOT / ".github" / "workflows" / "verify-generated-marketplace-publication.yml").read_text(encoding="utf-8")
+
+        # Beta provenance alone is insufficient: each generated Beta candidate
+        # binds the compared source-main head, and both unprotected early gate
+        # and protected finalizer read it as an independently exact source ref.
+        self.assertIn("(.main_source // empty)", workflow)
+        self.assertIn("(.main_source // empty)", freshness)
+
+    def test_finalizer_requires_the_exact_pr_source_gate(self) -> None:
+        workflow = FINAL_WORKFLOW.read_text(encoding="utf-8")
+
+        # The candidate source gate runs on pull_request. Accepting a
+        # workflow_dispatch run would not prove that the exact PR content
+        # received the reviewed Factory gate.
+        self.assertIn(
+            "actions/workflows/validate.yml/runs?head_sha=${",
+            workflow,
+        )
+        self.assertIn("&event=pull_request&per_page=100", workflow)
+        self.assertNotIn("&event=workflow_dispatch&per_page=100", workflow)
+
+        # The Finalizer runs while the candidate remains open, when GitHub
+        # returns its pull_requests association.
+        self.assertIn("--argjson pull_number", workflow)
+        self.assertIn("any(.pull_requests[]?; .number == $pull_number)", workflow)
+
     def test_finalizer_uses_source_gates_without_review_state(self) -> None:
         workflow = FINAL_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Require a current source gate", workflow)
