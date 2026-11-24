@@ -1,4 +1,4 @@
-"""Static contracts for the single-PR first-party source batch."""
+"""Static contracts for generated Marketplace PR finalization and publication."""
 
 from __future__ import annotations
 
@@ -10,9 +10,6 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BATCH_RECONCILE = ROOT / ".github" / "workflows" / "reconcile-marketplace-batch.yml"
-BATCH_PUBLISH = ROOT / ".github" / "workflows" / "publish-marketplace-batch.yml"
-STALE_BATCH_RECOVERY = ROOT / ".github" / "workflows" / "rebuild-stale-marketplace-batch.yml"
 AUTO_FINALIZER = ROOT / ".github" / "workflows" / "auto-finalize-generated-marketplace-pr.yml"
 SELECTED_FINALIZER = ROOT / ".github" / "workflows" / "finalize-selected-generated-marketplace-pr.yml"
 FINALIZER = ROOT / ".github" / "workflows" / "final-merge-generated-marketplace-pr.yml"
@@ -37,92 +34,6 @@ class MarketplaceBatchAutomationTests(unittest.TestCase):
         self.assertIn("maintenance=align_desktop_defaults", publish)
         self.assertIn("xsec-marketplace/default-set-", publish)
 
-    def test_source_events_coalesce_before_building_one_complete_candidate(self) -> None:
-        workflow = BATCH_RECONCILE.read_text(encoding="utf-8")
-        publisher = BATCH_PUBLISH.read_text(encoding="utf-8")
-        for rule in (
-            "group: xsec-marketplace-source-batch",
-            "cancel-in-progress: true",
-            "Only the Cloud dispatcher App may reconcile Marketplace sources.",
-            "prepare-reconcile-source",
-            "uses: ./.github/workflows/publish-marketplace-batch.yml",
-        ):
-            with self.subTest(rule=rule):
-                self.assertIn(rule, workflow)
-        for rule in (
-            "length == 12",
-            "xsec-marketplace-publish-main",
-            "permission-contents: read",
-            "resolve-native-sidecar-source",
-            "Resolve the current Desktop main revision",
-            "Resolve the current binary-analysis Beta revision",
-            "binary_source_sha",
-            "build-native-sidecars",
-            "macos-15-intel",
-            "ubuntu-24.04",
-            "windows-2022",
-            "x86_64-unknown-linux-gnu",
-            "xsec-native-sidecars-${{ matrix.rust_target }}",
-            "pattern: xsec-native-sidecars-*",
-            "Check out the exact binary-analysis Beta revision",
-            "binary-analysis-mcp",
-            "go build -trimpath -o \"$output_dir/system-terminal-mcp\" ./cmd/system-terminal-mcp",
-            "go build -trimpath -o (Join-Path $outputDirectory 'system-terminal-mcp') ./cmd/system-terminal-mcp",
-            "com.xsec.binary-analysis com.xsec.jwt-analysis com.xsec.system-terminal; do",
-            'com.xsec.system-terminal) binary_name="system-terminal-mcp" ;;',
-            "binary-engine",
-            "Binary-analysis Beta moved after its build revision was resolved.",
-            'if [ "$native_plugin" = "com.xsec.binary-analysis" ]; then',
-            "--packed-runtime-input",
-            "--native-sidecar-source-revision \"$NATIVE_SIDECARS_SOURCE_SHA\"",
-            "reconcile-retained-native-beta",
-            "--native-sidecar-source-revision-for",
-            "xsec-retained-native-beta",
-            "does not reproduce its retained Beta; requiring current protected sidecars.",
-            ".inputs | fromjson | .[]",
-            ".runtimes | fromjson | if type == \"array\" then . else error(\"retained packed runtimes are not an array\") end",
-            "Retained Beta packed runtime is unavailable for $native_plugin@$rust_target.",
-            "$native_plugin@$target=$binary",
-            "git status --porcelain --untracked-files=all",
-            "--allow-unsigned-active-release-sidecars",
-            'source_revision="$(git rev-parse HEAD)"',
-            '"$(git rev-parse origin/main)"',
-            "XSEC_MARKETPLACE_SOURCE_REVISION: ${{ steps.current-main.outputs.source_revision }}",
-            'git update-index --add --cacheinfo "160000,${beta_sha},plugins/${plugin_id}"',
-            "python scripts/external_source_factory.py validate --allow-unsigned-publication-proofs",
-            "python scripts/stage_factory_output.py .agents/plugins .xsec-factory plugins",
-            'branch="xsec-marketplace/batch-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
-        ):
-            with self.subTest(rule=rule):
-                self.assertIn(rule, publisher)
-        # binary-analysis and jwt-analysis reconcile like every other native
-        # plugin: a forced rebuild of an unmoved retained Beta cannot reproduce
-        # its digests, and the whole batch fails on the preflight.
-        self.assertNotIn('[ "$native_plugin" = "com.xsec.binary-analysis" ] || [ "$native_plugin" = "com.xsec.jwt-analysis" ]', publisher)
-        self.assertNotIn('if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then\n              reusable=false', publisher)
-        # A plugin that appended no release keeps its official status: the
-        # version publication verifier rejects status changes beside no release.
-        self.assertIn('git status --porcelain --untracked-files=all -- ".xsec-factory/snapshots/${plugin_id}/.xsec-market/releases.json"', publisher)
-        self.assertLess(
-            publisher.index("leaving its official status unchanged."),
-            publisher.index('python scripts/external_source_factory.py record-status --plugin-id "$plugin_id"'),
-        )
-        self.assertNotIn("permission-checks: read", publisher)
-        self.assertNotIn("branches/main --jq .protected", publisher)
-        self.assertNotIn("Desktop main must remain protected", publisher)
-        self.assertNotIn("| rg -v", publisher)
-        self.assertNotIn("| grep -v", publisher)
-
-    def test_batch_reconcile_forwards_the_validated_source_trigger_label(self) -> None:
-        workflow = BATCH_RECONCILE.read_text(encoding="utf-8")
-
-        self.assertIn("trigger_label: source-event:${{ steps.request.outputs.plugin_id }}", workflow)
-        self.assertIn(
-            "trigger_label: ${{ needs.validate-source-event.outputs.trigger_label }}",
-            workflow,
-        )
-        self.assertNotIn("outputs.event_plugin_id", workflow)
-
     def test_single_source_publication_retains_untargeted_native_betas(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
 
@@ -137,71 +48,6 @@ class MarketplaceBatchAutomationTests(unittest.TestCase):
         ):
             with self.subTest(rule=rule):
                 self.assertIn(rule, workflow)
-
-    def test_batch_caller_grants_write_scope_only_to_the_publisher(self) -> None:
-        """Keep write authority on the reusable publication job."""
-
-        workflow = yaml.safe_load(BATCH_RECONCILE.read_text(encoding="utf-8"))
-        publisher = yaml.safe_load(BATCH_PUBLISH.read_text(encoding="utf-8"))
-        recovery = yaml.safe_load(STALE_BATCH_RECOVERY.read_text(encoding="utf-8"))
-
-        self.assertEqual(workflow["permissions"], {"actions": "read", "contents": "read"})
-        self.assertEqual(
-            workflow["jobs"]["build-current-batch"]["permissions"],
-            {"contents": "write", "id-token": "write", "pull-requests": "write"},
-        )
-        self.assertEqual(
-            publisher["jobs"]["build-native-sidecars"]["permissions"],
-            {"contents": "read"},
-        )
-        self.assertEqual(
-            recovery["jobs"]["rebuild-current-batch"]["permissions"],
-            {"contents": "write", "id-token": "write", "pull-requests": "write"},
-        )
-
-    def test_stale_signed_batch_is_rebuilt_and_superseded_automatically(self) -> None:
-        recovery = STALE_BATCH_RECOVERY.read_text(encoding="utf-8")
-        publisher = BATCH_PUBLISH.read_text(encoding="utf-8")
-
-        for rule in (
-            "name: Rebuild stale generated Marketplace batch",
-            "repository_dispatch:",
-            "types: [xsec-stale-marketplace-batch-rebuild]",
-            "branches: [main]",
-            "group: xsec-marketplace-stale-batch-recovery",
-            "cancel-in-progress: false",
-            'git/ref/heads/main" --jq .object.sha',
-            'test("^xsec-marketplace/batch-[0-9]+-[0-9]+$")',
-            'compare/${head_sha}...${main_sha}',
-            'ahead_by="$(printf \'%s\' "$comparison" | jq -er \'.ahead_by',
-            'if [ "$ahead_by" -gt 0 ]; then',
-            "for name in source-gate; do",
-            "Verify the signed stale batch as data",
-            "--verify-active-marketplace-signatures",
-            "python scripts/external_source_factory.py --root \"$candidate\" validate",
-            "uses: ./.github/workflows/publish-marketplace-batch.yml",
-            "factory-stale-batch:",
-            "Close unchanged stale batches replaced by the new candidate",
-            'gh api --method PATCH "repos/${GITHUB_REPOSITORY}/pulls/${old_number}" -f state=closed',
-            "request-protected-rebuild:",
-            "github.event_name != 'repository_dispatch'",
-            "github.event_name == 'repository_dispatch'",
-            'repos/${GITHUB_REPOSITORY}/dispatches',
-            "event_type=xsec-stale-marketplace-batch-rebuild",
-        ):
-            with self.subTest(rule=rule):
-                self.assertIn(rule, recovery)
-        self.assertNotIn('sort_by(.created_at) | last | .state == "success"', recovery)
-        self.assertNotIn('behind_by="$(printf \'%s\' "$comparison" | jq -er \'.behind_by', recovery)
-        self.assertIn("trigger_label:", publisher)
-        self.assertIn("outputs:\n      pull_number:", publisher)
-        self.assertIn('Factory trigger label is invalid.', publisher)
-        self.assertIn('echo "pull_number=$pull_number" >> "$GITHUB_OUTPUT"', publisher)
-        self.assertNotIn("for name in source-gate source-freshness-gate; do", recovery)
-        review_guard = recovery.index('statuses="$(gh api --paginate --slurp')
-        success_output = recovery.index('echo "eligible=true"')
-        self.assertLess(review_guard, success_output)
-        self.assertIn("reviewThreads(first:100", recovery[review_guard:success_output])
 
     def test_only_successful_exact_generated_prs_enter_the_automatic_finalizer(self) -> None:
         workflow = AUTO_FINALIZER.read_text(encoding="utf-8")

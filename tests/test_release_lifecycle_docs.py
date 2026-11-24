@@ -11,7 +11,6 @@ PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 REFRESH_SIDECAR_WORKFLOW = ROOT / ".github" / "workflows" / "refresh-retained-sidecars.yml"
 ADOPTION_WORKFLOW = ROOT / ".github" / "workflows" / "adopt-first-party.yml"
 STAGE_ADOPTION_WORKFLOW = ROOT / ".github" / "workflows" / "stage-first-party-adoption.yml"
-POST_MERGE_DISPATCHER = ROOT / ".github" / "workflows" / "dispatch-reviewed-marketplace-smoke.yml"
 MERGE_GUARD_WORKFLOW = ROOT / ".github" / "workflows" / "verify-generated-marketplace-publication.yml"
 ARM_FINAL_GATE_WORKFLOW = ROOT / ".github" / "workflows" / "arm-generated-marketplace-final-merge.yml"
 FINAL_MERGE_WORKFLOW = ROOT / ".github" / "workflows" / "final-merge-generated-marketplace-pr.yml"
@@ -56,20 +55,15 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn("Marketplace KMS/JWS 发布链已于 2026-09-20 退役", document)
         self.assertIn("Marketplace KMS/JWS signing was retired on 2026-09-20", readme)
 
-    def test_duplicate_beta_delivery_never_dispatches_before_the_reviewed_merge(self) -> None:
+    def test_duplicate_beta_delivery_never_publishes_a_second_time(self) -> None:
         workflow = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
-        dispatcher = POST_MERGE_DISPATCHER.read_text(encoding="utf-8")
         self.assertIn("A duplicate source delivery", workflow)
-        self.assertIn("separately audited smoke recovery path", workflow)
         self.assertNotIn("XSEC_DESKTOP_REPOSITORY_DISPATCH_TOKEN", workflow)
-        self.assertIn("Dispatch the validated Beta or Stable revision to Desktop smoke", dispatcher)
-        self.assertIn("All registered Stable completions are bound to their Beta Desktop smoke callbacks", dispatcher)
 
     def test_current_publication_policy_and_legacy_status_verifier_are_documented(self) -> None:
         readme = README.read_text(encoding="utf-8")
         publisher = (ROOT / "scripts" / "kms_marketplace_publisher.py").read_text(encoding="utf-8")
         verifier = (ROOT / "scripts" / "verify_merged_stable_promotion.py").read_text(encoding="utf-8")
-        dispatcher = POST_MERGE_DISPATCHER.read_text(encoding="utf-8")
         for required_rule in (
             "Each SemVer identifies one immutable release",
             "Official and external\nplugins use the same permission-confirmation model",
@@ -83,27 +77,10 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn("OFFICIAL_STATUS_PROOFS_RELATIVE_PATH", publisher)
         self.assertIn("STATUS_PROOF_PATTERN", verifier)
         self.assertIn("status KMS proof", verifier)
-        self.assertIn("--verify-active-marketplace-records", dispatcher)
 
-    def test_merge_dispatcher_requires_signed_diff_source_gate_and_fresh_sources(self) -> None:
-        dispatcher = POST_MERGE_DISPATCHER.read_text(encoding="utf-8")
+    def test_merge_guard_revalidates_fresh_sources_at_the_merge_boundary(self) -> None:
         merge_guard = MERGE_GUARD_WORKFLOW.read_text(encoding="utf-8")
         publisher = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
-        for rule in (
-            "verify_merged_stable_promotion.py",
-            "--verify-active-marketplace-records",
-            "successful immutable Factory source gate",
-            "Require the merged generated PR and source gate",
-            "Revalidate each registered source branch at the exact merge boundary",
-            'event_type:"xsec_official_marketplace_published"',
-        ):
-            with self.subTest(rule=rule):
-                self.assertIn(rule, dispatcher)
-        self.assertNotIn("github.ref_protected", dispatcher)
-        self.assertNotIn("head_commit.message", dispatcher)
-        self.assertNotIn("coderabbit", dispatcher.lower())
-        self.assertNotIn("reviewThreads", dispatcher)
-        self.assertIn("ref: ${{ inputs.marketplace_revision || github.sha }}", dispatcher)
         self.assertIn("merge_group:", merge_guard)
         self.assertEqual(
             merge_guard.count('git diff --quiet "$BEFORE" "$AFTER" -- .agents/plugins .xsec-factory plugins .gitmodules'),
@@ -112,6 +89,31 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn("Registered ${repository} ${ref} advanced", merge_guard)
         self.assertIn("Refuse to sign while this plugin has a generated Factory PR awaiting final merge", publisher)
         self.assertNotIn("github.event.head_commit.message", publisher)
+
+    def test_final_merge_source_proofs_use_the_separate_reader_app(self) -> None:
+        final_merge = FINAL_MERGE_WORKFLOW.read_text(encoding="utf-8")
+        untrusted_pr_gate = MERGE_GUARD_WORKFLOW.read_text(encoding="utf-8")
+        header = (
+            '-c http.https://github.com/.extraheader= \\\n'
+            '              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header"'
+        )
+
+        self.assertIn("XSEC_MARKETPLACE_SOURCE_APP_ID", final_merge)
+        self.assertIn("XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY", final_merge)
+        self.assertIn("Create a narrowly scoped read-only Source App token", final_merge)
+        self.assertIn("permission-contents: read", final_merge)
+        self.assertIn("GIT_TERMINAL_PROMPT=0", final_merge)
+        self.assertIn(header, final_merge)
+        self.assertIn('http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header', final_merge)
+        self.assertEqual(final_merge.count(header), 3)
+        self.assertIn("SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}", final_merge)
+        # A pull_request runner executes the candidate workflow definition,
+        # so it must not receive the protected Source App key. It can report
+        # an authenticated public head early, but private access is deferred
+        # to the production-gated final workflow above.
+        self.assertNotIn("XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY", untrusted_pr_gate)
+        self.assertIn("defer private-source proof to the final gate", untrusted_pr_gate)
+        self.assertIn(')" || actual_sha=""', untrusted_pr_gate)
 
     def test_final_merge_gate_is_trusted_revalidating_and_does_not_deadlock_normal_prs(self) -> None:
         arm = ARM_FINAL_GATE_WORKFLOW.read_text(encoding="utf-8")
@@ -183,46 +185,6 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn("never\nwrites a success status", finalizer_ruleset_document)
         self.assertNotIn("short-lived exact-head approval", finalizer_ruleset_document)
         self.assertNotIn("requiring that check and GitHub merge queue", readme)
-
-    def test_final_and_post_merge_source_proofs_use_the_separate_reader_app(self) -> None:
-        final_merge = FINAL_MERGE_WORKFLOW.read_text(encoding="utf-8")
-        dispatcher = POST_MERGE_DISPATCHER.read_text(encoding="utf-8")
-        untrusted_pr_gate = MERGE_GUARD_WORKFLOW.read_text(encoding="utf-8")
-
-        for workflow in (final_merge, dispatcher):
-            with self.subTest(workflow="final" if workflow == final_merge else "dispatcher"):
-                self.assertIn("XSEC_MARKETPLACE_SOURCE_APP_ID", workflow)
-                self.assertIn("XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY", workflow)
-                self.assertIn("Create a narrowly scoped read-only Source App token", workflow)
-                self.assertIn("permission-contents: read", workflow)
-                self.assertIn("GIT_TERMINAL_PROMPT=0", workflow)
-                self.assertIn(
-                    '-c http.https://github.com/.extraheader= \\\n              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header"',
-                    workflow,
-                )
-                self.assertIn('http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header', workflow)
-        self.assertEqual(
-            final_merge.count(
-                '-c http.https://github.com/.extraheader= \\\n              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header"'
-            ),
-            3,
-        )
-        self.assertEqual(
-            dispatcher.count(
-                '-c http.https://github.com/.extraheader= \\\n              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $token_header"'
-            ),
-            1,
-        )
-        self.assertIn("SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}", final_merge)
-        self.assertIn("SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}", dispatcher)
-        self.assertNotIn("steps.finalizer.outputs.token", dispatcher)
-        # A pull_request runner executes the candidate workflow definition,
-        # so it must not receive the protected Source App key. It can report
-        # an authenticated public head early, but private access is deferred
-        # to the production-gated final workflow above.
-        self.assertNotIn("XSEC_MARKETPLACE_SOURCE_APP_PRIVATE_KEY", untrusted_pr_gate)
-        self.assertIn("defer private-source proof to the final gate", untrusted_pr_gate)
-        self.assertIn(')" || actual_sha=""', untrusted_pr_gate)
 
     def test_pending_generated_pr_scan_is_paginated_before_every_kms_call(self) -> None:
         workflows = (
@@ -314,16 +276,6 @@ class ReleaseLifecycleDocumentationTests(unittest.TestCase):
         self.assertIn('| jq -e \'[.[][]]\' > "$post_rulesets"', workflow)
         self.assertNotIn('gh api "repos/${GITHUB_REPOSITORY}/rulesets" > "$rulesets"', workflow)
         self.assertNotIn('gh api "repos/${GITHUB_REPOSITORY}/rulesets" > "$post_rulesets"', workflow)
-
-    def test_post_merge_dispatcher_slurps_all_associated_pr_pages_before_selecting_factory_pr(self) -> None:
-        workflow = POST_MERGE_DISPATCHER.read_text(encoding="utf-8")
-        self.assertIn(
-            'gh api --paginate --slurp -H \'Accept: application/vnd.github+json\' "repos/${GITHUB_REPOSITORY}/commits/${AFTER}/pulls?per_page=100"',
-            workflow,
-        )
-        self.assertIn('[.[][] | select(.merged_at != null and .base.ref == "main"', workflow)
-        self.assertIn('error("expected exactly one merged Factory generated PR")', workflow)
-        self.assertNotIn('gh api -H \'Accept: application/vnd.github+json\' "repos/${GITHUB_REPOSITORY}/commits/${AFTER}/pulls?per_page=100"', workflow)
 
     def test_final_gate_uses_source_gates_without_review_state(self) -> None:
         workflow = FINAL_MERGE_WORKFLOW.read_text(encoding="utf-8")

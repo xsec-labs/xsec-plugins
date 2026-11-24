@@ -832,7 +832,7 @@ jobs:
           # refuses redirects and all protocols except HTTPS, and writes to a
           # local verified ref rather than a source-controlled remote name.
           # This job starts only after the shared publication slot is acquired.
-          # A commit that was current when reconcile-source dispatched it must
+          # A commit that was current when release-plugins dispatched it must
           # still be the exact ref head now; ancestry alone would permit a
           # delayed old Beta to replace a newer delivery.
           fetch_refspecs=("$SOURCE_REF:refs/remotes/xsec-factory-source/verified")
