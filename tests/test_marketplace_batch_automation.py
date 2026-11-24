@@ -99,6 +99,7 @@ class MarketplaceBatchAutomationTests(unittest.TestCase):
         # plugin: a forced rebuild of an unmoved retained Beta cannot reproduce
         # its digests, and the whole batch fails on the preflight.
         self.assertNotIn('[ "$native_plugin" = "com.xsec.binary-analysis" ] || [ "$native_plugin" = "com.xsec.jwt-analysis" ]', publisher)
+        self.assertNotIn('if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then\n              reusable=false', publisher)
         self.assertNotIn("permission-checks: read", publisher)
         self.assertNotIn("branches/main --jq .protected", publisher)
         self.assertNotIn("Desktop main must remain protected", publisher)

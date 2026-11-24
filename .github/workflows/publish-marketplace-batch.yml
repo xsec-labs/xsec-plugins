@@ -577,17 +577,13 @@ jobs:
             record="$(jq -ce --arg plugin_id "$native_plugin" '.[] | select(.plugin_id == $plugin_id)' "$RECORDS")"
             source_root="$(printf '%s' "$record" | jq -er .source_root)"
             retained_root="$RUNNER_TEMP/xsec-retained-native-beta/${native_plugin}"
-            # A plugin built from its own source repository (binary-analysis,
-            # jwt-analysis) rebuilds from the Beta revision this run resolved
-            # only when that revision is not its retained Beta. A rebuild of
-            # the retained revision cannot reproduce the retained digests
-            # byte for byte, so build_market.py would refuse it; the retained
-            # sidecars and packed runtime are reused instead.
+            # A native plugin rebuilds only when its source is not its retained
+            # Beta. A rebuild of an unchanged source at a newer Desktop revision
+            # yields different bytes under the same version, so build_market.py
+            # would refuse it (the browser's 3.1.1 did); the retained sidecars
+            # and packed runtime are reused instead.
             reconciliation="$(python scripts/external_source_factory.py --json reconcile-retained-native-beta --plugin-id "$native_plugin" --source-root "$source_root" --destination "$retained_root")"
             reusable="$(printf '%s' "$reconciliation" | jq -er .reusable)"
-            if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then
-              reusable=false
-            fi
             if [ "$reusable" = "true" ]; then
               retained_revision="$(printf '%s' "$reconciliation" | jq -er .source_revision)"
               retained_revisions+=("--native-sidecar-source-revision-for" "$native_plugin=$retained_revision")
