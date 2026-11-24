@@ -21,7 +21,7 @@ users still confirm the plugin's permissions when they install it.
 
 1. **Prepare the source repository.** The Git root is the package root (`plugin.json`,
    `.codex-plugin/plugin.json` and, where it applies, `com.xsec.desktop/`); do not nest
-   `plugins/<id>/`. Create the `beta` and `main` branches that the registry will pin, and
+   `plugins/<id>/`. Releases come from the repository's `main` branch (the registry pins it), so
    bump the version for the revision you want published. The plugin ID must be an external
    one: `com.xsec.*` is reserved.
 2. **Open a registration PR against this repository.** Add one entry to
@@ -35,7 +35,7 @@ users still confirm the plugin's permissions when they install it.
      "source": {
        "repository": "owner/repository",
        "path": ".",
-       "refs": {"beta": "refs/heads/beta", "stable": "refs/heads/main"}
+       "refs": {"beta": "refs/heads/main", "stable": "refs/heads/main"}
      },
      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
      "category": "Security",
