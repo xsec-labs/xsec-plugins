@@ -44,7 +44,6 @@ except:
 try:
     import requests
     from requests.packages.urllib3.exceptions import InsecureRequestWarning
-    requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 except:
     print("WARNING: Python Requests libraries not imported - these are needed for external service interaction")
     print("On most Linux systems you can run the following command to install:")
@@ -109,6 +108,7 @@ def createConfig():
     config['services'] = {'jwt_tool_version': jwttoolvers,
         '# To disable the proxy option set this value to: False (no quotes). For Docker installations with a Windows host OS set this to: "host.docker.internal:8080"': None, 'proxy': proxyHost+':8080',
         '# To disable following redirects set this value to: False (no quotes)': None, 'redir': 'True',
+        '# Certificate checks for requests to the target stay on. Set this to False (no quotes) only for a target whose certificate you cannot verify.': None, 'tls_verify': 'True',
         '# Set this to the URL you are hosting your custom JWKS file (jwttool_custom_jwks.json) - your own server, or maybe use this cheeky reflective URL (https://httpbin.org/base64/{base64-encoded_JWKS_here})': None,
         'jwksloc': '',
         'jwksdynamic': 'https://httpbin.org/base64/'+jwks_b64.decode(),
@@ -161,17 +161,19 @@ def sendToken(token, cookiedict, track, headertoken="", postdata=None):
             redirBool = True
         else:
             redirBool = False
+        # Verification is on unless jwtconf.ini sets tls_verify = False; a missing key keeps it on.
+        verify = config['services'].getboolean('tls_verify', fallback=True)
+        if not verify:
+            requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
         if config['services']['proxy'] == "False":
-            if postdata:
-                response = requests.post(url, data=postdata, headers=headers, cookies=cookiedict, proxies=False, verify=False, allow_redirects=redirBool)
-            else:
-                response = requests.get(url, headers=headers, cookies=cookiedict, proxies=False, verify=False, allow_redirects=redirBool)
+            # No configured proxy: requests still applies the HTTP(S)_PROXY environment that the host sets.
+            proxies = None
         else:
             proxies = {'http': 'http://'+config['services']['proxy'], 'https': 'http://'+config['services']['proxy']}
-            if postdata:
-                response = requests.post(url, data=postdata, headers=headers, cookies=cookiedict, proxies=proxies, verify=False, allow_redirects=redirBool)
-            else:
-                response = requests.get(url, headers=headers, cookies=cookiedict, proxies=proxies, verify=False, allow_redirects=redirBool)
+        if postdata:
+            response = requests.post(url, data=postdata, headers=headers, cookies=cookiedict, proxies=proxies, verify=verify, allow_redirects=redirBool)
+        else:
+            response = requests.get(url, headers=headers, cookies=cookiedict, proxies=proxies, verify=verify, allow_redirects=redirBool)
         if int(response.elapsed.total_seconds()) >= 9:
             cprintc("HTTP response took about 10 seconds or more - could be a sign of a bug or vulnerability", "cyan")
         return [response.status_code, len(response.content), response.content]

@@ -46,3 +46,13 @@ test("the MCP server declaration parses when present", () => {
   if (!existsSync(join(root, "mcp.json"))) return;
   assert.ok(readJson("mcp.json").mcpServers, "mcp.json has no mcpServers");
 });
+
+test("the collector prompts are shipped and keep the host tool names", () => {
+  // Desktop reads these two files from the installed package to start a collection run and has no copy of its own.
+  const system = readFileSync(join(root, "prompts/collector-system.md"), "utf8");
+  const goal = readFileSync(join(root, "prompts/collector-goal.md"), "utf8");
+  for (const tool of ["xsec_asset_import", "xsec_collection_finalize", "xsec_product_issue_submit"]) {
+    assert.ok(system.includes(tool), `collector-system.md must mention ${tool}`);
+  }
+  assert.equal(goal.split("{scope}").length, 2, "collector-goal.md must contain {scope} exactly once");
+});

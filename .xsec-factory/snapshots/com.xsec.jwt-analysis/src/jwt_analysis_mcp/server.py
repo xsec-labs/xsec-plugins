@@ -115,7 +115,7 @@ def _create(args: dict[str, Any], meta: dict[str, Any], identity: dict[str, Any]
     if profile not in ("full", "passive"):
         raise ValueError("profile must be full or passive")
     selected = args.get("wordlists", settings.get("wordlists", DEFAULTS["wordlists"]))
-    if not isinstance(selected, list) or any(item not in ("jwt-common", "rockyou", "custom") for item in selected):
+    if not isinstance(selected, list) or any(item not in ("jwt-common", "custom") for item in selected):
         raise ValueError("wordlists contains an unsupported dictionary id")
     custom = args.get("custom_wordlists", settings.get("custom_wordlists", []))
     if not isinstance(custom, list) or any(not isinstance(path, str) for path in custom):

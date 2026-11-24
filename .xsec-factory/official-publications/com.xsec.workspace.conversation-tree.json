@@ -16,6 +16,21 @@
         "url": "artifacts/com.xsec.workspace.conversation-tree-2.0.0-sha256-f9ee897a30b9b8f2-any-any.xsec-plugin"
       },
       "publisher": "xsec-marketplace-bot"
+    },
+    {
+      "channel": "beta",
+      "releaseId": "sha256-a37c323c988ac7be5dc9cbcc2eb7b922f4cfe1c2aba809f8be421bb2d8ab2d0e",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-conversation-tree",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "5f69419b2c917c1e2ed82e368b9644f5cfeec929"
+      },
+      "artifact": {
+        "sha256": "288cfd4af84e2b2e65debfa08a1e683e09f7bca337b7ecebd8b1b26db5aa3ecf",
+        "url": "artifacts/com.xsec.workspace.conversation-tree-2.1.0-sha256-288cfd4af84e2b2e-any-any.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
     }
   ]
 }

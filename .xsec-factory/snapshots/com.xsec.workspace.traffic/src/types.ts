@@ -129,7 +129,7 @@ export type ReplayResult = {
 
 export type PassiveRule = {
   rule_id: string;
-  severity: "low" | "medium" | "high" | "critical";
+  severity: "info" | "low" | "medium" | "high" | "critical";
   pattern: string;
   enabled: boolean;
 };
