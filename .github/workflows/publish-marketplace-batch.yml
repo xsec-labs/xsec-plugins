@@ -297,7 +297,7 @@ jobs:
           esac
           output_dir="$RUNNER_TEMP/xsec-native-sidecars"
           mkdir -p "$output_dir"
-          for sidecar_cmd in attack-path-mcp asset-discovery-mcp browser-mcp; do
+          for sidecar_cmd in attack-path-mcp asset-discovery-mcp browser-mcp system-terminal-mcp; do
             if [ ! -d ".xsec-desktop-source/go/cmd/$sidecar_cmd" ]; then
               echo "xSecDesktop source is missing go/cmd/$sidecar_cmd; the pinned xSecDesktop commit must contain the Go sidecar packages." >&2
               exit 1
@@ -309,13 +309,16 @@ jobs:
             go build -trimpath -o "$output_dir/attack-path-mcp" ./cmd/attack-path-mcp
             go build -trimpath -o "$output_dir/asset-discovery-mcp" ./cmd/asset-discovery-mcp
             go build -trimpath -o "$output_dir/browser-mcp" ./cmd/browser-mcp
+            go build -trimpath -o "$output_dir/system-terminal-mcp" ./cmd/system-terminal-mcp
           )
           [ -f "$output_dir/attack-path-mcp" ] && [ ! -L "$output_dir/attack-path-mcp" ] && [ -s "$output_dir/attack-path-mcp" ]
           [ -f "$output_dir/asset-discovery-mcp" ] && [ ! -L "$output_dir/asset-discovery-mcp" ] && [ -s "$output_dir/asset-discovery-mcp" ]
           [ -f "$output_dir/browser-mcp" ] && [ ! -L "$output_dir/browser-mcp" ] && [ -s "$output_dir/browser-mcp" ]
+          [ -f "$output_dir/system-terminal-mcp" ] && [ ! -L "$output_dir/system-terminal-mcp" ] && [ -s "$output_dir/system-terminal-mcp" ]
           chmod 0755 "$output_dir/attack-path-mcp"
           chmod 0755 "$output_dir/asset-discovery-mcp"
           chmod 0755 "$output_dir/browser-mcp"
+          chmod 0755 "$output_dir/system-terminal-mcp"
           corepack enable
           # Corepack picks the pnpm version from the package.json in the current
           # directory, so run pnpm inside the Desktop checkout (pnpm@10 there).
@@ -358,7 +361,7 @@ jobs:
           $env:CGO_ENABLED = '0'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
-          foreach ($sidecarCmd in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp') {
+          foreach ($sidecarCmd in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp', 'system-terminal-mcp') {
             if (-not (Test-Path -LiteralPath (Join-Path '.xsec-desktop-source\go\cmd' $sidecarCmd) -PathType Container)) {
               throw "xSecDesktop source is missing go\cmd\$sidecarCmd; the pinned xSecDesktop commit must contain the Go sidecar packages."
             }
@@ -371,9 +374,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Asset-discovery MCP build failed' }
             go build -trimpath -o (Join-Path $outputDirectory 'browser-mcp') ./cmd/browser-mcp
             if ($LASTEXITCODE -ne 0) { throw 'Browser MCP build failed' }
+            go build -trimpath -o (Join-Path $outputDirectory 'system-terminal-mcp') ./cmd/system-terminal-mcp
+            if ($LASTEXITCODE -ne 0) { throw 'System-terminal MCP build failed' }
           }
           finally { Pop-Location }
-          foreach ($name in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp') {
+          foreach ($name in 'attack-path-mcp', 'asset-discovery-mcp', 'browser-mcp', 'system-terminal-mcp') {
             if (-not (Test-Path -LiteralPath (Join-Path $outputDirectory $name) -PathType Leaf)) { throw "$name binary is unavailable" }
           }
           corepack enable
@@ -568,18 +573,18 @@ jobs:
           native_inputs=()
           retained_revisions=()
           source_revisions=()
-          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis com.xsec.jwt-analysis; do
+          for native_plugin in com.xsec.attack-path com.xsec.asset-discovery com.xsec.workspace.browser com.xsec.binary-analysis com.xsec.jwt-analysis com.xsec.system-terminal; do
             record="$(jq -ce --arg plugin_id "$native_plugin" '.[] | select(.plugin_id == $plugin_id)' "$RECORDS")"
             source_root="$(printf '%s' "$record" | jq -er .source_root)"
             retained_root="$RUNNER_TEMP/xsec-retained-native-beta/${native_plugin}"
-            # Plugins built from their own source repository always rebuild
-            # from the Beta revision this run resolved and checked out.
-            if [ "$native_plugin" = "com.xsec.binary-analysis" ] || [ "$native_plugin" = "com.xsec.jwt-analysis" ]; then
-              reusable=false
-            else
-              reconciliation="$(python scripts/external_source_factory.py --json reconcile-retained-native-beta --plugin-id "$native_plugin" --source-root "$source_root" --destination "$retained_root")"
-              reusable="$(printf '%s' "$reconciliation" | jq -er .reusable)"
-            fi
+            # A plugin built from its own source repository (binary-analysis,
+            # jwt-analysis) rebuilds from the Beta revision this run resolved
+            # only when that revision is not its retained Beta. A rebuild of
+            # the retained revision cannot reproduce the retained digests
+            # byte for byte, so build_market.py would refuse it; the retained
+            # sidecars and packed runtime are reused instead.
+            reconciliation="$(python scripts/external_source_factory.py --json reconcile-retained-native-beta --plugin-id "$native_plugin" --source-root "$source_root" --destination "$retained_root")"
+            reusable="$(printf '%s' "$reconciliation" | jq -er .reusable)"
             if [ "$native_plugin" = "com.xsec.workspace.browser" ]; then
               reusable=false
             fi
@@ -592,6 +597,17 @@ jobs:
                 [ -f "$binary" ] && [ ! -L "$binary" ] && [ -s "$binary" ] || { echo "Retained Beta sidecar is unavailable for $native_plugin@$rust_target." >&2; exit 1; }
                 native_inputs+=("--native-sidecar-input" "$native_plugin@$rust_target=$binary")
               done < <(printf '%s' "$reconciliation" | jq -rc '.inputs | fromjson | .[]')
+              # A recipe with a packed runtime (binary-analysis) needs the
+              # retained runtime per target too; build_market.py refuses the
+              # release without it. A non-array must fail here, because a
+              # process substitution would otherwise run zero times.
+              retained_runtimes="$(printf '%s' "$reconciliation" | jq -ec '.runtimes | fromjson | if type == "array" then . else error("retained packed runtimes are not an array") end')" || { echo "Retained Beta packed runtime list is malformed for $native_plugin." >&2; exit 1; }
+              while IFS= read -r retained_runtime; do
+                rust_target="$(printf '%s' "$retained_runtime" | jq -er .rust_target)"
+                runtime="$(printf '%s' "$retained_runtime" | jq -er .path)"
+                [ -d "$runtime" ] && [ ! -L "$runtime" ] || { echo "Retained Beta packed runtime is unavailable for $native_plugin@$rust_target." >&2; exit 1; }
+                native_inputs+=("--packed-runtime-input" "$native_plugin@$rust_target=$runtime")
+              done < <(printf '%s' "$retained_runtimes" | jq -rc '.[]')
               continue
             fi
             echo "${native_plugin} does not reproduce its retained Beta; requiring current protected sidecars."
@@ -599,6 +615,7 @@ jobs:
               com.xsec.attack-path) binary_name="attack-path-mcp" ;;
               com.xsec.asset-discovery) binary_name="asset-discovery-mcp" ;;
               com.xsec.workspace.browser) binary_name="browser-mcp" ;;
+              com.xsec.system-terminal) binary_name="system-terminal-mcp" ;;
               com.xsec.binary-analysis) binary_name="binary-analysis-mcp" ;;
               com.xsec.jwt-analysis) binary_name="jwt-analysis-mcp" ;;
               *) echo "Unknown native plugin: $native_plugin" >&2; exit 1 ;;
