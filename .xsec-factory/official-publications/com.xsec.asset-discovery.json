@@ -31,6 +31,21 @@
         "url": "artifacts/com.xsec.asset-discovery-2.3.0-sha256-23a1699b44609632-macos-aarch64.xsec-plugin"
       },
       "publisher": "tzf1003"
+    },
+    {
+      "channel": "beta",
+      "releaseId": "sha256-1d4927776b847238a6454f5cd1e1a899c91800b3dd6bea8002e6e12a37cd9bd8",
+      "source": {
+        "repository": "xsec-labs/xsec-plugin-asset-discovery",
+        "path": ".",
+        "ref": "refs/heads/beta",
+        "sha": "066e1af32caf5b5bd5508696e257830bdc35ee83"
+      },
+      "artifact": {
+        "sha256": "6fe9dea1b2ee2d8103234116d10c472f3f399eeeb09938c5d15de52947864490",
+        "url": "artifacts/com.xsec.asset-discovery-2.4.0-sha256-6fe9dea1b2ee2d81-macos-aarch64.xsec-plugin"
+      },
+      "publisher": "xsec-marketplace-bot"
     }
   ]
 }
