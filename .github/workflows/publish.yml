@@ -1,5 +1,11 @@
 name: Publish immutable marketplace version
 
+# release-plugins.yml finds the run it dispatched by this name.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('Publish {0} {1}', inputs.plugin_id || 'built-in', inputs.source_sha)
+      || 'Publish immutable marketplace version' }}
+
 on:
   push:
     branches: [main]
